@@ -120,6 +120,74 @@ void HelloTriangleApplication::createInstance() {
     */
 }
 
+void HelloTriangleApplication::pickPhysicalDevice() {
+    // similar to extensions, gets the physical devices available
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+    
+    // handles no devices
+    if (deviceCount == 0) {
+        throw std::runtime_error("failed to find GPUs with Vulkan support!");
+    }
+
+    // get a vector of physical devices
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+    // store all physical devices in the vector
+    vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+    // iterate over available physical devices and check that they are suitable
+    for (const auto& device : devices) {
+        if (isDeviceSuitable(device)) {
+            physicalDevice = device;
+            break;
+        }
+    }
+
+    // if the physicalDevice handle is still null, then no suitable devices were found
+    if (physicalDevice == VK_NULL_HANDLE) {
+        throw std::runtime_error("failed to find a suitable GPU!");
+    }
+}
+
+bool HelloTriangleApplication::isDeviceSuitable(VkPhysicalDevice device) {
+    // if we wanted to look at the device properties and features in more detail:
+    // VkPhysicalDeviceProperties deviceProperties;
+    // vkGetPhysicalDeviceProperties(device, &deviceProperties);
+    // VkPhysicalDeviceFeatures deviceFeatures;
+    // vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+    // we could determine which device is the most suitable by giving each a score
+    // based on the contents of the structs
+
+    // get the queues
+    QueueFamilyIndices indices = findQueueFamilies(device);
+
+    // for now just return true
+    return indices.isComplete();
+}
+
+QueueFamilyIndices HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice device) {
+    QueueFamilyIndices indices;
+    // similar to physical device and extensions and layers....
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+    // iterate over queue family properties vector
+    int i = 0;
+    for (const auto& queueFamily : queueFamilies) {
+        // if the queue supports the desired queue operation, then the bitwise & operator returns true
+        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            // gaphics family was assigned a value! optional wrapper has_value now returns true.
+            indices.graphicsFamily = i;
+        }
+        // increment i
+        i++;
+    }
+
+    return indices;
+}
+
 //
 // Main loop
 //

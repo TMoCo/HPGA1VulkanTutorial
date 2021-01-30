@@ -10,6 +10,9 @@
 // vector
 #include <vector>
 
+// wrapper that contains no value until one is assigned
+#include <optional>
+
 // constants for window dimensions
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -24,6 +27,15 @@ const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation
 #else
     const bool enableValidationLayers = true;
 #endif
+
+// a struct 
+struct QueueFamilyIndices {
+    std::optional<uint32_t> graphicsFamily;
+    
+    bool isComplete() {
+        return graphicsFamily.has_value();
+    }
+};
 
 
 // program wrapped in class where vulkan objects are stored as private members
@@ -41,6 +53,14 @@ private:
 
     // create a vulkan instance
     void createInstance();
+
+    // picks a physical device (graphics card)
+    void pickPhysicalDevice();
+
+    // checks if the device is suitable for our operation
+    bool isDeviceSuitable(VkPhysicalDevice device);
+
+    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 
     // the main loop
     void mainLoop();
@@ -85,6 +105,9 @@ private:
 
     // a struct handle that manages debug callbacks
     VkDebugUtilsMessengerEXT debugMessenger;
+
+    // the graphics card selected
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 };
 
 
