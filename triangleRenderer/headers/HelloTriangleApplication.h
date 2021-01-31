@@ -23,12 +23,23 @@ const uint32_t HEIGHT = 600;
 // validation layers for debugging
 const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
-// uncomment to remove validation layers for debug
-//#define NDEBUG
+// required device extensions
+const std::vector<const char*> deviceExtensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME // swap chain is the infrastructure that owns the buffers we will render, a queue of images waiting to go on the screen
+};
+
+//#define NDEBUG // uncomment to remove validation layers for debug
 #ifdef NDEBUG
     const bool enableValidationLayers = false;
 #else
     const bool enableValidationLayers = true;
+#endif
+
+//#define SHOW_EXTENSIONS
+#ifdef SHOW_EXTENSIONS
+    const bool enableExtensionsDisplay = true;
+#else
+    const bool enableExtensionsDisplay = false;
 #endif
 
 // a struct for the queue family index
@@ -44,6 +55,15 @@ struct QueueFamilyIndices {
     }
 };
 
+// a struct containing the details for support of a swap chain:
+// surface capabilities (min/max number of images in swap chain, min/max width and height of images)
+// surface formats (pixel format, colour space)
+// available presentation modes
+struct SwapChainSupportDetails {
+    VkSurfaceCapabilitiesKHR capabilities;
+    std::vector<VkSurfaceFormatKHR> formats;
+    std::vector<VkPresentModeKHR> presentModes;
+};
 
 // program wrapped in class where vulkan objects are stored as private members
 class HelloTriangleApplication {
@@ -73,7 +93,20 @@ private:
     // checks if the device is suitable for our operation
     bool isDeviceSuitable(VkPhysicalDevice device);
 
+    // checks if a device supports a certain extension
+    bool checkDeviceExtensionSupport(VkPhysicalDevice device);
+
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
+
+    SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
+
+    VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
+
+    VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
+
+    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+
+    void createSwapChain();
 
     // the main loop
     void mainLoop();
@@ -107,9 +140,8 @@ private:
 
     std::vector<const char*> getRequiredExtensions();
 
-
-private:
     // private members
+private:
     // the window
     GLFWwindow* window; 
 
@@ -133,6 +165,9 @@ private:
 
     // platform agnostic handle to a surface
     VkSurfaceKHR surface;
+
+    // the swap chain
+    VkSwapchainKHR swapChain;
 };
 
 #endif // !HELLO_TRIANGLE_APPLICATION_H
