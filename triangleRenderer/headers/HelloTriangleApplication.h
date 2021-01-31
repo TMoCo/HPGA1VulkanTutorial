@@ -57,6 +57,9 @@ private:
     // picks a physical device (graphics card)
     void pickPhysicalDevice();
 
+    // create a device interface
+    void createLogicalDevice();
+
     // checks if the device is suitable for our operation
     bool isDeviceSuitable(VkPhysicalDevice device);
 
@@ -108,6 +111,9 @@ private:
 
     // the graphics card selected
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+
+    // logical device that interfaces with the physical device
+    VkDevice device;
 };
 
 

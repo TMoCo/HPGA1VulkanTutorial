@@ -149,6 +149,50 @@ void HelloTriangleApplication::pickPhysicalDevice() {
     }
 }
 
+void HelloTriangleApplication::createLogicalDevice() {
+    // query the queue families available on the device
+    QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+    // specify which queue we want to create, initialise struct at 0
+    VkDeviceQueueCreateInfo queueCreateInfo{};
+    // information in the struct
+    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    // the family index
+    queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
+    // number of queues
+    queueCreateInfo.queueCount = 1;
+
+    // between 0 and 1, influences sheduling of queue commands 
+    float queuePriority = 1.0f;
+    queueCreateInfo.pQueuePriorities = &queuePriority;
+
+    // queries support certain features (like geometry shaders, other things in the vulkan pipeline...)
+    VkPhysicalDeviceFeatures deviceFeatures{};
+
+    // the struct containing the device info
+    VkDeviceCreateInfo createInfo{};
+    // inform on type of struct
+    createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    // pointer to queue info
+    createInfo.pQueueCreateInfos = &queueCreateInfo;
+    // the number of queues
+    createInfo.queueCreateInfoCount = 1;
+
+    // desired device features
+    createInfo.pEnabledFeatures = &deviceFeatures;
+    // setting validation layers and extensions is per device
+    createInfo.enabledExtensionCount = 0;
+
+    // older implementation compatibility, no disitinction instance and device specific validations
+    if (enableValidationLayers) {
+        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+        createInfo.ppEnabledLayerNames = validationLayers.data();
+    }
+    else {
+        createInfo.enabledLayerCount = 0;
+    }
+
+}
+
 bool HelloTriangleApplication::isDeviceSuitable(VkPhysicalDevice device) {
     // if we wanted to look at the device properties and features in more detail:
     // VkPhysicalDeviceProperties deviceProperties;
