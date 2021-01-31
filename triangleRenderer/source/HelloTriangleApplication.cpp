@@ -47,14 +47,18 @@ void HelloTriangleApplication::initWindow() {
 }
 
 void HelloTriangleApplication::initVulkan() {
-    // create the instance
     createInstance();
     setupDebugMessenger();
     createSurface();
     pickPhysicalDevice();
     createLogicalDevice();
     createSwapChain();
+    createImageViews();
 }
+
+//
+// Create vulkan instance 
+//
 
 void HelloTriangleApplication::createInstance() {
     // if we have enabled validation layers and some requested layers aren't available, throw error
@@ -131,42 +135,40 @@ void HelloTriangleApplication::createInstance() {
     */
 }
 
-void HelloTriangleApplication::createSurface() {
-    // takes simple arguments instead of structs
-    // object is platform agnostic but creation is not, this is handled by the glfw method
-    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create window surface!");
+std::vector<const char*> HelloTriangleApplication::getRequiredExtensions() {
+    // start by getting the glfw extensions, nescessary for displaying something in a window.
+    // platform agnostic, so need an extension to interface with window system. Use GLFW to return
+    // the extensions needed for platform and passed to createInfo struct
+    uint32_t glfwExtensionCount = 0; // initialise extension count to 0, changed later
+    const char** glfwExtensions; // array of strings with extension names
+    // get extension count
+    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+    // glfwExtensions is an array of strings, we give the vector constructor a range of values from glfwExtensions to 
+    // copy (first value at glfwExtensions, a pointer, to last value, pointer to first + nb of extensions)
+    // a vector containing the values from glfwExtensions. 
+    std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+
+    // add the VK_EXT_debug_utils with macro on condition debug is activated
+    if (enableValidationLayers) {
+        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
+
+    // return the vector
+    return extensions;
 }
 
-void HelloTriangleApplication::pickPhysicalDevice() {
-    // similar to extensions, gets the physical devices available
-    uint32_t deviceCount = 0;
-    vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
-    
-    // handles no devices
-    if (deviceCount == 0) {
-        throw std::runtime_error("failed to find GPUs with Vulkan support!");
-    }
+//
+// Graphics pipeline setup
+//
 
-    // get a vector of physical devices
-    std::vector<VkPhysicalDevice> devices(deviceCount);
-    // store all physical devices in the vector
-    vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+void HelloTriangleApplication::createGraphicsPipeline() {
 
-    // iterate over available physical devices and check that they are suitable
-    for (const auto& device : devices) {
-        if (isDeviceSuitable(device)) {
-            physicalDevice = device;
-            break;
-        }
-    }
-
-    // if the physicalDevice handle is still null, then no suitable devices were found
-    if (physicalDevice == VK_NULL_HANDLE) {
-        throw std::runtime_error("failed to find a suitable GPU!");
-    }
 }
+
+//
+// Device setup
+//
 
 void HelloTriangleApplication::createLogicalDevice() {
     // query the queue families available on the device
@@ -222,7 +224,7 @@ void HelloTriangleApplication::createLogicalDevice() {
     else {
         createInfo.enabledLayerCount = 0;
     }
-    
+
     // instantiate a logical device from the create info we've determined
     if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
         throw std::runtime_error("failed to create logical device!");
@@ -232,6 +234,35 @@ void HelloTriangleApplication::createLogicalDevice() {
     vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
     // set the presentation queue handle like above
     vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
+}
+
+void HelloTriangleApplication::pickPhysicalDevice() {
+    // similar to extensions, gets the physical devices available
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+    
+    // handles no devices
+    if (deviceCount == 0) {
+        throw std::runtime_error("failed to find GPUs with Vulkan support!");
+    }
+
+    // get a vector of physical devices
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+    // store all physical devices in the vector
+    vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+    // iterate over available physical devices and check that they are suitable
+    for (const auto& device : devices) {
+        if (isDeviceSuitable(device)) {
+            physicalDevice = device;
+            break;
+        }
+    }
+
+    // if the physicalDevice handle is still null, then no suitable devices were found
+    if (physicalDevice == VK_NULL_HANDLE) {
+        throw std::runtime_error("failed to find a suitable GPU!");
+    }
 }
 
 bool HelloTriangleApplication::isDeviceSuitable(VkPhysicalDevice device) {
@@ -319,6 +350,10 @@ QueueFamilyIndices HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice 
 
     return indices;
 }
+
+//
+// Swap chain and surface setup
+//
 
 SwapChainSupportDetails HelloTriangleApplication::querySwapChainSupport(VkPhysicalDevice device) {
     SwapChainSupportDetails details{};
@@ -423,6 +458,10 @@ void HelloTriangleApplication::createSwapChain() {
     VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
     VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
 
+    // save format and extent
+    swapChainImageFormat = surfaceFormat.format;
+    swapChainExtent = extent;
+
     // the number of images we want to put in the swap chain, at least one more image than minimum so we don't have to wait for 
     // driver to complete internal operations before acquiring another image
     uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
@@ -474,6 +513,52 @@ void HelloTriangleApplication::createSwapChain() {
     if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
         throw std::runtime_error("failed to create swap chain!");
     }
+
+    // get size of swap chain images
+    vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
+    // resize accordingly
+    swapChainImages.resize(imageCount);
+    // pull the images
+    vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
+}
+
+void HelloTriangleApplication::createSurface() {
+    // takes simple arguments instead of structs
+    // object is platform agnostic but creation is not, this is handled by the glfw method
+    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create window surface!");
+    }
+}
+
+void HelloTriangleApplication::createImageViews() {
+    // resize the vector of views to accomodate the images
+    swapChainImageViews.resize(swapChainImages.size());
+
+    // loop to iterate through images
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+        // a view struct for each image
+        VkImageViewCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        createInfo.image = swapChainImages[i]; // the image this is a view of
+        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // image as 1/2/3D textures and cube maps
+        createInfo.format = swapChainImageFormat; // how the image data should be interpreted
+        // lets us swizzle colour channels around (here there is no swizzle)
+        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        // describe what the image purpose is and what part of the image 
+        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        createInfo.subresourceRange.baseMipLevel = 0;
+        createInfo.subresourceRange.levelCount = 1;
+        createInfo.subresourceRange.baseArrayLayer = 0;
+        createInfo.subresourceRange.layerCount = 1;
+
+        // create the view
+        if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create image views!");
+        }
+    }
 }
 
 //
@@ -492,6 +577,10 @@ void HelloTriangleApplication::mainLoop() {
 //
 
 void HelloTriangleApplication::cleanup() {
+    // explicily declared by us, the views, unlike the images, need to be explicilty destroyed
+    for (auto imageView : swapChainImageViews) {
+        vkDestroyImageView(device, imageView, nullptr);
+    }
     // destroy the swap chain before the device
     vkDestroySwapchainKHR(device, swapChain, nullptr);
 
@@ -630,27 +719,4 @@ bool HelloTriangleApplication::checkValidationLayerSupport() {
     }
 
     return true;
-}
-
-std::vector<const char*> HelloTriangleApplication::getRequiredExtensions() {
-    // start by getting the glfw extensions, nescessary for displaying something in a window.
-    // platform agnostic, so need an extension to interface with window system. Use GLFW to return
-    // the extensions needed for platform and passed to createInfo struct
-    uint32_t glfwExtensionCount = 0; // initialise extension count to 0, changed later
-    const char** glfwExtensions; // array of strings with extension names
-    // get extension count
-    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-    // glfwExtensions is an array of strings, we give the vector constructor a range of values from glfwExtensions to 
-    // copy (first value at glfwExtensions, a pointer, to last value, pointer to first + nb of extensions)
-    // a vector containing the values from glfwExtensions. 
-    std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
-
-    // add the VK_EXT_debug_utils with macro on condition debug is activated
-    if (enableValidationLayers) {
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    }
-
-    // return the vector
-    return extensions;
 }

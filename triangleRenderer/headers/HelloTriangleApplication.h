@@ -78,17 +78,27 @@ private:
     // init vulkan instance
     void initVulkan();
 
+    //--------------------------------------------------------------------//
+
     // create a vulkan instance
     void createInstance();
 
-    // create a window surface
-    void createSurface();
+    std::vector<const char*> getRequiredExtensions();
+
+    //--------------------------------------------------------------------//
+
+    // the graphics pipeline, vulkan does not allow us to modify the pipeline so we need to create one 
+    // from scratch if we want to add/remove stages, etc... For the purpose of rendering a single triangle
+    // however, we only need one pipeline
+    void createGraphicsPipeline();
+
+    //--------------------------------------------------------------------//
+ 
+    // create a device interface
+    void createLogicalDevice();
 
     // picks a physical device (graphics card)
     void pickPhysicalDevice();
-
-    // create a device interface
-    void createLogicalDevice();
 
     // checks if the device is suitable for our operation
     bool isDeviceSuitable(VkPhysicalDevice device);
@@ -97,6 +107,8 @@ private:
     bool checkDeviceExtensionSupport(VkPhysicalDevice device);
 
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
+
+    //--------------------------------------------------------------------//
 
     SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 
@@ -108,11 +120,22 @@ private:
 
     void createSwapChain();
 
+    // create a window surface
+    void createSurface();
+
+    void createImageViews();
+
+    //--------------------------------------------------------------------//
+
     // the main loop
     void mainLoop();
 
+    //--------------------------------------------------------------------//
+
     // destroys everything properly
     void cleanup();
+
+    //--------------------------------------------------------------------//
 
     // sets up the debug messenger when in debug mode
     void setupDebugMessenger();
@@ -137,8 +160,6 @@ private:
     void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
 
     bool checkValidationLayerSupport();
-
-    std::vector<const char*> getRequiredExtensions();
 
     // private members
 private:
@@ -166,8 +187,14 @@ private:
     // platform agnostic handle to a surface
     VkSurfaceKHR surface;
 
-    // the swap chain
+    // the swap chain and its data
     VkSwapchainKHR swapChain;
+    std::vector<VkImage> swapChainImages;
+    VkFormat swapChainImageFormat;
+    VkExtent2D swapChainExtent;
+
+    // need views to use images in the render pipeline
+    std::vector<VkImageView> swapChainImageViews;
 };
 
 #endif // !HELLO_TRIANGLE_APPLICATION_H
