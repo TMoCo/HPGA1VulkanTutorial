@@ -4,8 +4,11 @@
 // functions, structs and enums
 // #include <vulkan/vulkan.h> 
 
+#define VK_USE_PLATFORM_WIN32_KHR
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
 
 // vector
 #include <vector>
@@ -28,12 +31,16 @@ const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation
     const bool enableValidationLayers = true;
 #endif
 
-// a struct 
+// a struct for the queue family index
 struct QueueFamilyIndices {
+    // queue family supporting drawing commands
     std::optional<uint32_t> graphicsFamily;
+    // presentation of image to vulkan surface handled by the device
+    std::optional<uint32_t> presentFamily;
     
+    // returns true if the device supports the drawing commands AND the image can be presented to the surface
     bool isComplete() {
-        return graphicsFamily.has_value();
+        return graphicsFamily.has_value() && presentFamily.has_value();
     }
 };
 
@@ -53,6 +60,9 @@ private:
 
     // create a vulkan instance
     void createInstance();
+
+    // create a window surface
+    void createSurface();
 
     // picks a physical device (graphics card)
     void pickPhysicalDevice();
@@ -114,8 +124,16 @@ private:
 
     // logical device that interfaces with the physical device
     VkDevice device;
-};
 
+    // queue handle for interacting with the graphics queue, implicitly cleaned up by destroying devices
+    VkQueue graphicsQueue;
+
+    // queue handle for interacting with the presentation queue
+    VkQueue presentQueue;
+
+    // platform agnostic handle to a surface
+    VkSurfaceKHR surface;
+};
 
 #endif // !HELLO_TRIANGLE_APPLICATION_H
 

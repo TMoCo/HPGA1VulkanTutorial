@@ -5,6 +5,9 @@
 #include <iostream> 
 #include <stdexcept>
 
+// set for queues
+#include <set>
+
 //
 // Run application
 //
@@ -37,6 +40,9 @@ void HelloTriangleApplication::initVulkan() {
     // create the instance
     createInstance();
     setupDebugMessenger();
+    createSurface();
+    pickPhysicalDevice();
+    createLogicalDevice();
 }
 
 void HelloTriangleApplication::createInstance() {
@@ -65,7 +71,6 @@ void HelloTriangleApplication::createInstance() {
     createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
 
-
     // include valdation layers if enables
     if (enableValidationLayers) {
         // save layer count, cast size_t to uin32_t
@@ -76,13 +81,7 @@ void HelloTriangleApplication::createInstance() {
         createInfo.enabledLayerCount = 0;
     }
 
-    // we can now create the instance (pointer to struct, pointer to custom allocator callbacks, 
-    // pointer to handle that stores the new object)
-    if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) { // check everything went well by comparing returned value
-        throw std::runtime_error("failed to create a vulkan instance!");
-    }
-
-    // create a 
+    // create a debug messenger before the instance is created to capture any errors in creation process
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
     if (enableValidationLayers) {
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
@@ -93,12 +92,13 @@ void HelloTriangleApplication::createInstance() {
     }
     else {
         createInfo.enabledLayerCount = 0;
-
         createInfo.pNext = nullptr;
     }
 
-    if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create instance!");
+    // we can now create the instance (pointer to struct, pointer to custom allocator callbacks, 
+    // pointer to handle that stores the new object)
+    if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) { // check everything went well by comparing returned value
+        throw std::runtime_error("failed to create a vulkan instance!");
     }
 
     /*
@@ -118,6 +118,14 @@ void HelloTriangleApplication::createInstance() {
         std::cout << '\t' << extension.extensionName << '\n'; // struct stores extension name, print it
     }
     */
+}
+
+void HelloTriangleApplication::createSurface() {
+    // takes simple arguments instead of structs
+    // object is platform agnostic but creation is not, this is handled by the glfw method
+    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create window surface!");
+    }
 }
 
 void HelloTriangleApplication::pickPhysicalDevice() {
@@ -152,18 +160,29 @@ void HelloTriangleApplication::pickPhysicalDevice() {
 void HelloTriangleApplication::createLogicalDevice() {
     // query the queue families available on the device
     QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
-    // specify which queue we want to create, initialise struct at 0
-    VkDeviceQueueCreateInfo queueCreateInfo{};
-    // information in the struct
-    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    // the family index
-    queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
-    // number of queues
-    queueCreateInfo.queueCount = 1;
 
-    // between 0 and 1, influences sheduling of queue commands 
+    // create a vector containing VkDeviceQueueCreqteInfo structs
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    // using a set makes sure that there are no dulpicate references to a same queue!
+    std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+
+    // queue priority, for now give quueues the same priority
     float queuePriority = 1.0f;
-    queueCreateInfo.pQueuePriorities = &queuePriority;
+    // loop over the queue families in the set
+    for (uint32_t queueFamily : uniqueQueueFamilies) {
+        // specify which queue we want to create, initialise struct at 0
+        VkDeviceQueueCreateInfo queueCreateInfo{};
+        // information in the struct
+        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        // the family index
+        queueCreateInfo.queueFamilyIndex = queueFamily;
+        // number of queues
+        queueCreateInfo.queueCount = 1;
+        // between 0 and 1, influences sheduling of queue commands 
+        queueCreateInfo.pQueuePriorities = &queuePriority;
+        // push the info on the vector
+        queueCreateInfos.push_back(queueCreateInfo);
+    }
 
     // queries support certain features (like geometry shaders, other things in the vulkan pipeline...)
     VkPhysicalDeviceFeatures deviceFeatures{};
@@ -172,10 +191,10 @@ void HelloTriangleApplication::createLogicalDevice() {
     VkDeviceCreateInfo createInfo{};
     // inform on type of struct
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    // pointer to queue info
-    createInfo.pQueueCreateInfos = &queueCreateInfo;
     // the number of queues
-    createInfo.queueCreateInfoCount = 1;
+    createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+    // pointer to queue(s) info, here the raw underlying array in a vector (guaranteed contiguous!)
+    createInfo.pQueueCreateInfos = queueCreateInfos.data();
 
     // desired device features
     createInfo.pEnabledFeatures = &deviceFeatures;
@@ -184,13 +203,23 @@ void HelloTriangleApplication::createLogicalDevice() {
 
     // older implementation compatibility, no disitinction instance and device specific validations
     if (enableValidationLayers) {
+        // these fields are ignored by newer vulkan implementations
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
         createInfo.ppEnabledLayerNames = validationLayers.data();
     }
     else {
         createInfo.enabledLayerCount = 0;
     }
+    
+    // instantiate a logical device from the create info we've determined
+    if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create logical device!");
+    }
 
+    // set the graphics queue handle, only want a single queue so use index 0
+    vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
+    // set the presentation queue handle like above
+    vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
 }
 
 bool HelloTriangleApplication::isDeviceSuitable(VkPhysicalDevice device) {
@@ -205,7 +234,7 @@ bool HelloTriangleApplication::isDeviceSuitable(VkPhysicalDevice device) {
     // get the queues
     QueueFamilyIndices indices = findQueueFamilies(device);
 
-    // for now just return true
+    // for now return the queue family index (true if a value was initialised)
     return indices.isComplete();
 }
 
@@ -214,7 +243,9 @@ QueueFamilyIndices HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice 
     // similar to physical device and extensions and layers....
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+    // create a vector to store queue families
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    // store the queue families in the vector
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
 
     // iterate over queue family properties vector
@@ -225,10 +256,17 @@ QueueFamilyIndices HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice 
             // gaphics family was assigned a value! optional wrapper has_value now returns true.
             indices.graphicsFamily = i;
         }
-        // increment i
+        // start with false
+        VkBool32 presentSupport = false;
+        // function checks that device, queuefamily can present on the surface, sets presentSupport to true if so
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+        // check the value in presentSupport
+        if (presentSupport) {
+            indices.presentFamily = i;
+        }
+        // increment i to get index of next queue family
         i++;
     }
-
     return indices;
 }
 
@@ -248,10 +286,16 @@ void HelloTriangleApplication::mainLoop() {
 //
 
 void HelloTriangleApplication::cleanup() {
+    // remove the logical device, no direct interaction with instance to not passed as argument
+    vkDestroyDevice(device, nullptr);
+
     // if debug activated, remove the messenger
     if (enableValidationLayers) {
         DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
     }
+
+    // destroy the window surface
+    vkDestroySurfaceKHR(instance, surface, nullptr);
            
     // only called before program exits, destroys the vulkan instance
     vkDestroyInstance(instance, nullptr);
@@ -286,10 +330,10 @@ VkResult HelloTriangleApplication::CreateDebugUtilsMessengerEXT(VkInstance insta
     const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
     const VkAllocationCallbacks* pAllocator,
     VkDebugUtilsMessengerEXT* pDebugMessenger) {
-    // vkGetInstanceProcAddr returns nullptr if the function couldn't be loaded
+    // vkGetInstanceProcAddr returns nullptr if the function couldn't be loaded, otherwise a pointer to the function
     auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
     if (func != nullptr) {
-        // return the pointer to the function
+        // return the result of the function
         return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
     }
     else {
@@ -322,7 +366,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL HelloTriangleApplication::debugCallback(
     // VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT : Something has happened that violates the specification or indicates a possible mistake
     // VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT : Potential non - optimal use of Vulkan
     // refers to a struct with the details of the message itself
-    // pMessage: The debug message as a null - terminated string
+    // pMessage : The debug message as a null - terminated string
     // pObjects : Array of Vulkan object handles related to the message
     // objectCount : Number of objects in array
     std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
