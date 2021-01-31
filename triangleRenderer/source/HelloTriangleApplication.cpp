@@ -8,6 +8,9 @@
 // min, max
 #include <algorithm>
 
+// file (shader) loading
+#include <fstream>
+
 // need to define this macro to stop using the macro definitions of min and max.
 // alternatively define the preprocessor definition NOMINMAX in the vs solution properties
 //#define NOMINMAX 
@@ -163,7 +166,40 @@ std::vector<const char*> HelloTriangleApplication::getRequiredExtensions() {
 //
 
 void HelloTriangleApplication::createGraphicsPipeline() {
+    // std::vector<char> 
+    auto vertShaderCode = readFile("shaders/vert.spv");
+    auto fragShaderCode = readFile("shaders/frag.spv");
 
+    // compiling and linking of shaders doesnt happen until the pipeline is created, they are also destroyed along
+    // with the pipeline so we don't need them to be member variables of the class
+    VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+    VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+    // need to assign shaders to stages in the pipeline
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    // for the vertex shader, we'll asign it to the vertex stage
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    // set the vertex shader
+    vertShaderStageInfo.module = vertShaderModule;
+    vertShaderStageInfo.pName = "main"; // the entry point, or the function to invoke in the shader
+    // vertShaderStageInfo.pSpecializationInfo : can specify values for shader constants. Can use a singleshader module 
+    // whose behaviour can be configured at pipeline creation by specifying different values for the constants used 
+    // better than at render time because compiler can optimise if statements dependent on these values. Watch this space
+
+    // similar gist as vertex shader for fragment shader
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT; // assign to the fragment stage
+    fragShaderStageInfo.module = fragShaderModule;
+    fragShaderStageInfo.pName = "main"; // also use main as the entry point
+
+    // use this array for future reference
+    VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+    // destroy the shader modules, as we don't need them once the shaders have been compiled
+    vkDestroyShaderModule(device, fragShaderModule, nullptr);
+    vkDestroyShaderModule(device, vertShaderModule, nullptr);
 }
 
 //
@@ -572,6 +608,52 @@ void HelloTriangleApplication::mainLoop() {
     }
 }
 
+//
+// Shaders
+//
+
+std::vector<char> HelloTriangleApplication::readFile(const std::string& filename) {
+    // create an input file stream, place cursor at the end and read in binary
+    std::ifstream file(filename, std::ios::ate | std::ios::binary);
+
+    // check that the stream was succesfully opened
+    if (!file.is_open()) {
+        throw std::runtime_error("failed to open file!");
+    }
+
+    // reading in the file at the end, we can use read position to determine how big the file is
+    // and allocate a buffer accordingly. tellg returns position of current character (ate)
+    size_t fileSize = (size_t)file.tellg();
+    // now allocate the buffer to accomodate for the file size and the data (bytes)
+    std::vector<char> buffer(fileSize);
+    // place cursor back at the begining of the file
+    file.seekg(0);
+    // then read the data, pointer to vector data and fileSIze informs where to place data and how much to read
+    file.read(buffer.data(), fileSize);
+    // good practice, always close the file!
+    file.close();
+    // and return the file in the buffer (bytes)
+    return buffer;
+}
+
+
+VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<char>& code) {
+    // need to wrap the shader code into a shader module through this helper function, takes 
+    // pointer to the byte code as argument
+    VkShaderModuleCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    createInfo.codeSize = code.size();
+    // the pointer to the bytecode needs to be a unit32_t, but it is currently a char. The reinterpret cast
+    // needs the data to satisfy the alignment of the uint32_t... But apparently the vector guarantees that
+    createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+
+    VkShaderModule shaderModule;
+    // create the shader module 
+    if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create shader module!");
+    }
+    return shaderModule;
+}
 //
 // Cleanup
 //

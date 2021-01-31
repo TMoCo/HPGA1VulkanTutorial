@@ -10,8 +10,8 @@
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 
-// vector
 #include <vector>
+#include <string>
 
 // wrapper that contains no value until one is assigned
 #include <optional>
@@ -129,6 +129,12 @@ private:
 
     // the main loop
     void mainLoop();
+
+    //--------------------------------------------------------------------//
+
+    static std::vector<char> readFile(const std::string& filename);
+
+    VkShaderModule createShaderModule(const std::vector<char>& code);
 
     //--------------------------------------------------------------------//
 
