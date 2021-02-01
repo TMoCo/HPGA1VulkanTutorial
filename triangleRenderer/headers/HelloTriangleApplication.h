@@ -95,6 +95,14 @@ private:
     void createRenderPass();
 
     //--------------------------------------------------------------------//
+
+    void createFrameBuffers();
+
+    void createCommandPool();
+
+    void createCommandBuffers();
+
+    //--------------------------------------------------------------------//
  
     // create a device interface
     void createLogicalDevice();
@@ -131,6 +139,9 @@ private:
 
     // the main loop
     void mainLoop();
+
+    void drawFrame();
+
 
     //--------------------------------------------------------------------//
 
@@ -209,6 +220,17 @@ private:
     VkPipelineLayout pipelineLayout;
     // the pipeline
     VkPipeline graphicsPipeline;
+
+    // a vector containing all the framebuffers
+    std::vector<VkFramebuffer> swapChainFramebuffers;
+
+    // command buffers
+    VkCommandPool commandPool;
+    std::vector<VkCommandBuffer> commandBuffers;
+
+    // synching
+    VkSemaphore imageAvailableSemaphore;
+    VkSemaphore renderFinishedSemaphore;
 };
 
 #endif // !HELLO_TRIANGLE_APPLICATION_H
