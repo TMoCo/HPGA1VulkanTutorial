@@ -92,6 +92,8 @@ private:
     // however, we only need one pipeline
     void createGraphicsPipeline();
 
+    void createRenderPass();
+
     //--------------------------------------------------------------------//
  
     // create a device interface
@@ -201,6 +203,12 @@ private:
 
     // need views to use images in the render pipeline
     std::vector<VkImageView> swapChainImageViews;
+
+    // layout used to specify fragment uniforms, still required even if not used
+    VkRenderPass renderPass;
+    VkPipelineLayout pipelineLayout;
+    // the pipeline
+    VkPipeline graphicsPipeline;
 };
 
 #endif // !HELLO_TRIANGLE_APPLICATION_H
