@@ -18,5 +18,22 @@
     <ClCompile Include="source\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="source\DuckApplication.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="headers\DuckApplication.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="source\shaders\compile.bat">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="source\shaders\frag.spv" />
+    <None Include="source\shaders\shader.frag" />
+    <None Include="source\shaders\shader.vert" />
+    <None Include="source\shaders\vert.spv" />
   </ItemGroup>
 </Project>
