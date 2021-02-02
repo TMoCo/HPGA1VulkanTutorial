@@ -4,17 +4,21 @@
 // functions, structs and enums
 // #include <vulkan/vulkan.h> 
 
-#define VK_USE_PLATFORM_WIN32_KHR
+//#define VK_USE_PLATFORM_WIN32_KHR
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3native.h>
+//#define GLFW_EXPOSE_NATIVE_WIN32
+//#include <GLFW/glfw3native.h>
 
 #include <vector>
 #include <string>
 
 // wrapper that contains no value until one is assigned
 #include <optional>
+
+//
+// Constants
+//
 
 // constants for window dimensions
 const uint32_t WIDTH = 800;
@@ -28,6 +32,10 @@ const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME // swap chain is the infrastructure that owns the buffers we will render, a queue of images waiting to go on the screen
 };
 
+//
+// Debug preprocessor
+//
+
 //#define NDEBUG // uncomment to remove validation layers for debug
 #ifdef NDEBUG
     const bool enableValidationLayers = false;
@@ -35,12 +43,17 @@ const std::vector<const char*> deviceExtensions = {
     const bool enableValidationLayers = true;
 #endif
 
-//#define SHOW_EXTENSIONS
-#ifdef SHOW_EXTENSIONS
-    const bool enableExtensionsDisplay = true;
+//#define VERBOSE
+#ifdef VERBOSE
+    const bool enableVerboseValidation = true;
 #else
-    const bool enableExtensionsDisplay = false;
+    const bool enableVerboseValidation = false;
 #endif
+
+
+//
+// Helper structs
+//
 
 // a struct for the queue family index
 struct QueueFamilyIndices {
@@ -137,11 +150,14 @@ private:
 
     //--------------------------------------------------------------------//
 
+    void createSemaphores();
+
+    //--------------------------------------------------------------------//
+
     // the main loop
     void mainLoop();
 
     void drawFrame();
-
 
     //--------------------------------------------------------------------//
 
@@ -187,33 +203,31 @@ private:
 
     // vulkan instance struct
     VkInstance instance; 
-
     // a struct handle that manages debug callbacks
     VkDebugUtilsMessengerEXT debugMessenger;
+    // platform agnostic handle to a surface
+    VkSurfaceKHR surface;
 
     // the graphics card selected
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-
     // logical device that interfaces with the physical device
     VkDevice device;
 
     // queue handle for interacting with the graphics queue, implicitly cleaned up by destroying devices
     VkQueue graphicsQueue;
-
     // queue handle for interacting with the presentation queue
     VkQueue presentQueue;
-
-    // platform agnostic handle to a surface
-    VkSurfaceKHR surface;
 
     // the swap chain and its data
     VkSwapchainKHR swapChain;
     std::vector<VkImage> swapChainImages;
     VkFormat swapChainImageFormat;
     VkExtent2D swapChainExtent;
-
     // need views to use images in the render pipeline
     std::vector<VkImageView> swapChainImageViews;
+    // a vector containing all the framebuffers
+    std::vector<VkFramebuffer> swapChainFramebuffers;
+
 
     // layout used to specify fragment uniforms, still required even if not used
     VkRenderPass renderPass;
@@ -221,14 +235,11 @@ private:
     // the pipeline
     VkPipeline graphicsPipeline;
 
-    // a vector containing all the framebuffers
-    std::vector<VkFramebuffer> swapChainFramebuffers;
-
     // command buffers
     VkCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
 
-    // synching
+    // syncing
     VkSemaphore imageAvailableSemaphore;
     VkSemaphore renderFinishedSemaphore;
 };

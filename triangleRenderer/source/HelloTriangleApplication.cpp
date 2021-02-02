@@ -62,6 +62,7 @@ void HelloTriangleApplication::initVulkan() {
     createFrameBuffers();
     createCommandPool();
     createCommandBuffers();
+    createSemaphores();
 }
 
 //
@@ -94,19 +95,11 @@ void HelloTriangleApplication::createInstance() {
     createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
 
+    // create a debug messenger before the instance is created to capture any errors in creation process
+    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
     // include valdation layers if enables
     if (enableValidationLayers) {
         // save layer count, cast size_t to uin32_t
-        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-        createInfo.ppEnabledLayerNames = validationLayers.data();
-    }
-    else {
-        createInfo.enabledLayerCount = 0;
-    }
-
-    // create a debug messenger before the instance is created to capture any errors in creation process
-    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
-    if (enableValidationLayers) {
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
         createInfo.ppEnabledLayerNames = validationLayers.data();
 
@@ -172,8 +165,8 @@ std::vector<const char*> HelloTriangleApplication::getRequiredExtensions() {
 
 void HelloTriangleApplication::createGraphicsPipeline() {
     // std::vector<char> 
-    auto vertShaderCode = readFile("C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\triangleRenderer\\source\\shaders\\vert.sprv");
-    auto fragShaderCode = readFile("C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\triangleRenderer\\source\\shaders\\frag.sprv");
+    auto vertShaderCode = readFile("C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\triangleRenderer\\source\\shaders\\vert.spv");
+    auto fragShaderCode = readFile("C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\triangleRenderer\\source\\shaders\\frag.spv");
 
     // compiling and linking of shaders doesnt happen until the pipeline is created, they are also destroyed along
     // with the pipeline so we don't need them to be member variables of the class
@@ -358,6 +351,7 @@ void HelloTriangleApplication::createGraphicsPipeline() {
     // reference the array of shader stage structs
     pipelineInfo.stageCount = 2;
     pipelineInfo.pStages = shaderStages;
+
     // reference the structures describing the fixed function pipeline
     pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &inputAssembly;
@@ -419,18 +413,43 @@ void HelloTriangleApplication::createRenderPass() {
     // the subpass
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; // be explicit that this is a graphics subpass (Vulkan supports compute subpasses)
+    
     // specify the reference to the colour attachment 
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef; // other types of attachments can also be referenced
 
-    // now create the render pass, can be created by filling the structure with references to arrays for multiple subpasses and attachments
+    // subpass dependencies control the image layout transitions. They specify memory and execution of dependencies between subpasses
+    // there are implicit subpasses right before and after the render pass
+    // There are two built-in dependencies that take care of the transition at the start of the render pass and at the end, but the former 
+    // does not occur at the right time as it assumes that the transition occurs at the start of the pipeline, but we haven't acquired the image yet 
+    // there are two ways to deal with the problem:
+    // - change waitStages of the imageAvailableSemaphore (in the drawframe function) to VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT -> ensures that the
+    // render pass does not start until image is available
+    // - make the render pass wait for the VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT stage
+    VkSubpassDependency dependency{};
+    // indices of the dependency and dependent subpasses, dstSubpass > srcSubpass at all times to prevent cycles in dependency graph
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL; // special refers to implicit subpass before or after renderpass 
+    dependency.dstSubpass = 0; // index 0 refers to our subpass, first and only one
+    // specify the operations to wait on and stag when ops occur
+    // need to wait for swap chain to finish reading, can be accomplished by waiting on the colour attachment output stage
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    // ops that should wait are in colour attachment stage and involve writing of the colour attachment
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    // now create the render pass, can be created by filling the structure with references to arrays for multiple subpasses, attachments and dependencies
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.pAttachments = &colorAttachment; // the colour attachment for the renderpass
     renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.pSubpasses = &subpass; // the associated supass
+    // specify the dependency
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
 
+    // explicitly create the renderpass
     if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
         throw std::runtime_error("failed to create render pass!");
     }
@@ -446,7 +465,7 @@ void HelloTriangleApplication::createFrameBuffers() {
 
     // now loop over the image views and create framebuffers from them
     for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-        // get the 
+        // get the attachment 
         VkImageView attachments[] = {
             swapChainImageViews[i]
         };
@@ -543,16 +562,16 @@ void HelloTriangleApplication::createCommandBuffers() {
         // VK_SUBPASS_CONTENTS_INLINE -> render pass cmd embedded in primary command buffer and no secondary command buffers will be executed
         // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS -> render pass commands executed from secondary command buffers
 
-        // bind the graphics pipeline, second param determines if the object is a graphics or compute pipeline
-        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+            // bind the graphics pipeline, second param determines if the object is a graphics or compute pipeline
+            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-        // command to draw the triangle
-        vkCmdDraw(commandBuffers[i], 3, 1, 0, 0); // params :
-        // the command buffer
-        // although we have no vertex buffers, we still have three vertices to draw
-        // instance count, for instance rendering, so only one here
-        // first vertex, offset into the vertex buffer. Defines lowest value of gl_VertexIndex
-        // first instance, offset for instance rendering. Defines lowest value of gl_InstanceIndex
+            // command to draw the triangle
+            vkCmdDraw(commandBuffers[i], 3, 1, 0, 0); // params :
+            // the command buffer
+            // although we have no vertex buffers, we still have three vertices to draw
+            // instance count, for instance rendering, so only one here
+            // first vertex, offset into the vertex buffer. Defines lowest value of gl_VertexIndex
+            // first instance, offset for instance rendering. Defines lowest value of gl_InstanceIndex
 
         // end the render pass
         vkCmdEndRenderPass(commandBuffers[i]);
@@ -742,6 +761,11 @@ QueueFamilyIndices HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice 
         if (presentSupport) {
             indices.presentFamily = i;
         }
+
+        // return the first valid queue family
+        if (indices.isComplete()) {
+            break;
+        }
         // increment i to get index of next queue family
         i++;
     }
@@ -754,7 +778,7 @@ QueueFamilyIndices HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice 
 //
 
 SwapChainSupportDetails HelloTriangleApplication::querySwapChainSupport(VkPhysicalDevice device) {
-    SwapChainSupportDetails details{};
+    SwapChainSupportDetails details;
     // query the surface capabilities and store in a VkSurfaceCapabilities struct
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities); // takes into account device and surface when determining capabilities
     
@@ -856,10 +880,6 @@ void HelloTriangleApplication::createSwapChain() {
     VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
     VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
 
-    // save format and extent
-    swapChainImageFormat = surfaceFormat.format;
-    swapChainExtent = extent;
-
     // the number of images we want to put in the swap chain, at least one more image than minimum so we don't have to wait for 
     // driver to complete internal operations before acquiring another image
     uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
@@ -918,6 +938,10 @@ void HelloTriangleApplication::createSwapChain() {
     swapChainImages.resize(imageCount);
     // pull the images
     vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
+    
+    // save format and extent
+    swapChainImageFormat = surfaceFormat.format;
+    swapChainExtent = extent;
 }
 
 void HelloTriangleApplication::createSurface() {
@@ -960,6 +984,22 @@ void HelloTriangleApplication::createImageViews() {
 }
 
 //
+// Synchronisation
+//
+
+void HelloTriangleApplication::createSemaphores() {
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    // only required field at the moment, may change in the future
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    // attempt to create the semaphors
+    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS ||
+        vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create semaphores!");
+    }
+}
+
+//
 // Main loop and drawing
 //
 
@@ -969,12 +1009,71 @@ void HelloTriangleApplication::mainLoop() {
         glfwPollEvents();
         drawFrame();
     }
+    vkDeviceWaitIdle(device);
 }
 
 void HelloTriangleApplication::drawFrame() {
     // will acquire an image from swap chain, exec commands in command buffer with images as attachments in the frameBuffer
     // return the image to the swap buffer. These tasks are started simultaneously but executed asynchronously.
     // However we want these to occur in sequence because each relies on the previous task success
+    // For syncing can use semaphores or fences and coordinate operations by having one op signal another
+    // op and another operation wait for a fence or semaphor to go from unsignaled to signaled.
+    // we can access fence state with vkWaitForFences and not semaphores.
+    // fences are mainly for syncing app with rendering op.
+    // semaphores are for syncing ops within or across cmd queues. We want to sync queue op to draw cmds and presentation so pref semaphores here
+
+    // retrieve an image from the swap chain
+    uint32_t imageIndex;
+    // swap chain is an extension so use the vk*KHR function
+    vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex); // params:
+    // the logical device and the swap chain we want to restrieve image from
+    // a timeout in ns. Using UINT64_MAX disables it
+    // synchronisation objects, so a semaphore
+    // handle to another sync object (which we don't use so nul handle)
+    // variable to output the swap chain image that has become available
+
+    // info needed to submit the command buffer
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    // which semaphores to wait on before execution begins
+    VkSemaphore waitSemaphores[] = { imageAvailableSemaphore };
+    // which stages of the pipeline to wait at (here at the stage where we write colours to the attachment)
+    // we can in theory start work on vertex shader etc while image is not yet available
+    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages; // for each sempahore we provide a wait stage
+    // which command buffer to submit to, submit the cmd buffer that binds the swap chain image we acquired as color attachment
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
+
+    // which semaphores to signal once the command buffer(s) has finished, we are using the renderFinishedSemaphore for that
+    VkSemaphore signalSemaphores[] = { renderFinishedSemaphore };
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSemaphores;
+
+    // submit the command buffer to the graphics queue, takes an array of submitinfo when work load is much larger
+    // last param is an optional fence
+    if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        throw std::runtime_error("failed to submit draw command buffer!");
+    }
+
+    // submitting the result back to the swap chain to have it shown onto the screen
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    // which semaphores to wait on 
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
+    // specify the swap chains to present image to and index of image for each swap chain
+    VkSwapchainKHR swapChains[] = { swapChain };
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapChains;
+    presentInfo.pImageIndices = &imageIndex;
+    // allows to specify an array of vKResults to check for every individual swap chain if presentation is succesful
+    presentInfo.pResults = nullptr; // Optional
+
+    // submit the request to an image to the swap chain 
+    vkQueuePresentKHR(presentQueue, &presentInfo);
 }
 
 
@@ -1022,6 +1121,7 @@ VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<ch
     if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
         throw std::runtime_error("failed to create shader module!");
     }
+
     return shaderModule;
 }
 
@@ -1030,12 +1130,15 @@ VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<ch
 //
 
 void HelloTriangleApplication::cleanup() {
+    vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+    vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
     vkDestroyCommandPool(device, commandPool, nullptr);
 
     // destroy the framebuffers since they were explicitly created by us
     for (auto framebuffer : swapChainFramebuffers) {
         vkDestroyFramebuffer(device, framebuffer, nullptr);
     }
+
     // destroy the pipeline data (pipeline, pipeline layout, render pass)
     vkDestroyPipeline(device, graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -1045,9 +1148,9 @@ void HelloTriangleApplication::cleanup() {
     for (auto imageView : swapChainImageViews) {
         vkDestroyImageView(device, imageView, nullptr);
     }
+
     // destroy the swap chain before the device
     vkDestroySwapchainKHR(device, swapChain, nullptr);
-
     // remove the logical device, no direct interaction with instance to not passed as argument
     vkDestroyDevice(device, nullptr);
 
@@ -1058,7 +1161,6 @@ void HelloTriangleApplication::cleanup() {
 
     // destroy the window surface
     vkDestroySurfaceKHR(instance, surface, nullptr);
-           
     // only called before program exits, destroys the vulkan instance
     vkDestroyInstance(instance, nullptr);
 
@@ -1146,7 +1248,7 @@ void HelloTriangleApplication::populateDebugMessengerCreateInfo(VkDebugUtilsMess
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
     // types of callbacks to be called for
     createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-    if (enableExtensionsDisplay) {
+    if (enableVerboseValidation) {
         createInfo.messageSeverity |= VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
     }
     // filter which message type filtered by callback

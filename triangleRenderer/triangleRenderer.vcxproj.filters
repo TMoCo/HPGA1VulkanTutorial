@@ -33,7 +33,7 @@
     <None Include="source\shaders\compile.bat">
       <Filter>Source Files</Filter>
     </None>
-    <None Include="source\shaders\frag.sprv" />
-    <None Include="source\shaders\vert.sprv" />
+    <None Include="source\shaders\frag.spv" />
+    <None Include="source\shaders\vert.spv" />
   </ItemGroup>
 </Project>
