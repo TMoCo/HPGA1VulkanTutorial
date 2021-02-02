@@ -37,18 +37,6 @@ void HelloTriangleApplication::run() {
 // Initialisation
 //
 
-void HelloTriangleApplication::initWindow() {
-    // initialise glfw library
-    glfwInit();
-
-    // set parameters
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // initially for opengl, so tell it not to create opengl context
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // disable resizing for now
-
-    // create the window, 4th param refs a monitor, 5th param is opengl related
-    window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
-}
-
 void HelloTriangleApplication::initVulkan() {
     createInstance();
     setupDebugMessenger();
@@ -62,7 +50,7 @@ void HelloTriangleApplication::initVulkan() {
     createFrameBuffers();
     createCommandPool();
     createCommandBuffers();
-    createSemaphores();
+    createSyncObjects();
 }
 
 //
@@ -456,7 +444,7 @@ void HelloTriangleApplication::createRenderPass() {
 }
 
 //
-// Buffers (command, frame)
+// Buffers (command, frame) setuo
 //
 
 void HelloTriangleApplication::createFrameBuffers() {
@@ -944,6 +932,59 @@ void HelloTriangleApplication::createSwapChain() {
     swapChainExtent = extent;
 }
 
+void HelloTriangleApplication::recreateSwapChain() {
+    // for handling window minimisation, we get the size of the windo through the glfw framebuffer dimensions
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(window, &width, &height);
+
+    // start an infinite loop to hang the process
+    while (width == 0 || height == 0) {
+        // continually evaluate the window dimensions, if the window is no longer hidder the loop will terminate
+        glfwGetFramebufferSize(window, &width, &height);
+        glfwWaitEvents();
+    }
+
+    // wait before touching if in use by the device
+    vkDeviceWaitIdle(device);
+
+    // destroy the previous swap chain
+    cleanupSwapChain();
+
+    // all creation functions for objects that depend on swap chain / window size
+    createSwapChain(); // recreate the swap chain itself
+    createImageViews(); // because views are based on swap chain images, they need to be recreated as well
+    createRenderPass(); // render pass needs to be recreated because it depends on format of swap chain images
+    // rare for swapchain image format to change but needs handling, viewport and scissors specified in pipeline 
+    // creation so needs to be recreated. NB we can avoid this using dynamic states
+    createGraphicsPipeline();
+    createFrameBuffers(); // directly depend on swap chain images so recreate
+    createCommandBuffers(); // directly depend on swap chain images so recreate
+}
+
+void HelloTriangleApplication::cleanupSwapChain() {
+    // destroy the frame buffers
+    for (size_t i = 0; i < swapChainFramebuffers.size(); i++) {
+        vkDestroyFramebuffer(device, swapChainFramebuffers[i], nullptr);
+    }
+
+    // destroy the command buffers. This lets us preserve the command pool rather than wastefully creating and deestroying repeatedly
+    vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+
+    // destroy pipeline and related data
+    vkDestroyPipeline(device, graphicsPipeline, nullptr);
+    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+    vkDestroyRenderPass(device, renderPass, nullptr);
+
+    // loop over the image views and destroy them. NB we don't destroy the images because they are implicilty created
+    // and destroyed by the swap chain
+    for (size_t i = 0; i < swapChainImageViews.size(); i++) {
+        vkDestroyImageView(device, swapChainImageViews[i], nullptr);
+    }
+
+    // destroy the swap chain proper
+    vkDestroySwapchainKHR(device, swapChain, nullptr);
+}
+
 void HelloTriangleApplication::createSurface() {
     // takes simple arguments instead of structs
     // object is platform agnostic but creation is not, this is handled by the glfw method
@@ -987,15 +1028,29 @@ void HelloTriangleApplication::createImageViews() {
 // Synchronisation
 //
 
-void HelloTriangleApplication::createSemaphores() {
+void HelloTriangleApplication::createSyncObjects() {
+    // resize the semaphores to the number of simultaneous frames, each has its own semaphores
+    imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+    imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE); // explicitly initialise the fences in this vector to no fence
+
     VkSemaphoreCreateInfo semaphoreInfo{};
     // only required field at the moment, may change in the future
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-    // attempt to create the semaphors
-    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS ||
-        vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create semaphores!");
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // initialise in the signaled state
+
+    // simply loop over each frame and create semaphores for them
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        // attempt to create the semaphors
+        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
+            vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create semaphores!");
+        }
     }
 }
 
@@ -1019,24 +1074,44 @@ void HelloTriangleApplication::drawFrame() {
     // For syncing can use semaphores or fences and coordinate operations by having one op signal another
     // op and another operation wait for a fence or semaphor to go from unsignaled to signaled.
     // we can access fence state with vkWaitForFences and not semaphores.
-    // fences are mainly for syncing app with rendering op.
+    // fences are mainly for syncing app with rendering op, use here to synchronise the frame rate
     // semaphores are for syncing ops within or across cmd queues. We want to sync queue op to draw cmds and presentation so pref semaphores here
+
+    // at the start of the frame, make sure that the previous frame has finished which will signal the fence
+    vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
     // retrieve an image from the swap chain
     uint32_t imageIndex;
     // swap chain is an extension so use the vk*KHR function
-    vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex); // params:
+    VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex); // params:
     // the logical device and the swap chain we want to restrieve image from
     // a timeout in ns. Using UINT64_MAX disables it
     // synchronisation objects, so a semaphore
     // handle to another sync object (which we don't use so nul handle)
     // variable to output the swap chain image that has become available
 
+    // Vulkan tells us if the swap chain is out of date with this result value (the swap chain is incompatible with the surface, eg window resize)
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        // if so then recreate the swap chain and try to acquire the image from the new swap chain
+        recreateSwapChain();
+        return; // return to acquire the image again
+    }
+    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) { // both values here are considered "success", even if partial, values
+        throw std::runtime_error("failed to acquire swap chain image!");
+    }
+
+    // Check if a previous frame is using this image (i.e. there is its fence to wait on)
+    if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
+        vkWaitForFences(device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+    }
+    // Mark the image as now being in use by this frame
+    imagesInFlight[imageIndex] = inFlightFences[currentFrame];
+
     // info needed to submit the command buffer
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     // which semaphores to wait on before execution begins
-    VkSemaphore waitSemaphores[] = { imageAvailableSemaphore };
+    VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
     // which stages of the pipeline to wait at (here at the stage where we write colours to the attachment)
     // we can in theory start work on vertex shader etc while image is not yet available
     VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
@@ -1048,13 +1123,16 @@ void HelloTriangleApplication::drawFrame() {
     submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
 
     // which semaphores to signal once the command buffer(s) has finished, we are using the renderFinishedSemaphore for that
-    VkSemaphore signalSemaphores[] = { renderFinishedSemaphore };
+    VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
+    // reset the fence to block next frame just before using the fence
+    vkResetFences(device, 1, &inFlightFences[currentFrame]);
+
     // submit the command buffer to the graphics queue, takes an array of submitinfo when work load is much larger
-    // last param is an optional fence
-    if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+    // last param is a fence, should be signaled when the cmd buffer finished executing so use to signal frame has finished
+    if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
         throw std::runtime_error("failed to submit draw command buffer!");
     }
 
@@ -1072,8 +1150,20 @@ void HelloTriangleApplication::drawFrame() {
     // allows to specify an array of vKResults to check for every individual swap chain if presentation is succesful
     presentInfo.pResults = nullptr; // Optional
 
-    // submit the request to an image to the swap chain 
-    vkQueuePresentKHR(presentQueue, &presentInfo);
+    // submit the request to put an image from the swap chain to the presentation queue
+    result = vkQueuePresentKHR(presentQueue, &presentInfo);
+
+    // similar to when acquiring the swap chain image, check that the presentation queue can accept the image, also check for resizing
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
+        framebufferResized = false;
+        recreateSwapChain();
+    }
+    else if (result != VK_SUCCESS) {
+        throw std::runtime_error("failed to present swap chain image!");
+    }
+
+    // after a frame is drawn, increment current frame count (% loops around)
+    currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 
@@ -1105,7 +1195,6 @@ std::vector<char> HelloTriangleApplication::readFile(const std::string& filename
     return buffer;
 }
 
-
 VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<char>& code) {
     // need to wrap the shader code into a shader module through this helper function, takes 
     // pointer to the byte code as argument
@@ -1130,28 +1219,17 @@ VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<ch
 //
 
 void HelloTriangleApplication::cleanup() {
-    vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
-    vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+    cleanupSwapChain();
+
+    // loop over each frame and destroy its semaphores 
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+        vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+        vkDestroyFence(device, inFlightFences[i], nullptr);
+    }
+
     vkDestroyCommandPool(device, commandPool, nullptr);
-
-    // destroy the framebuffers since they were explicitly created by us
-    for (auto framebuffer : swapChainFramebuffers) {
-        vkDestroyFramebuffer(device, framebuffer, nullptr);
-    }
-
-    // destroy the pipeline data (pipeline, pipeline layout, render pass)
-    vkDestroyPipeline(device, graphicsPipeline, nullptr);
-    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-    vkDestroyRenderPass(device, renderPass, nullptr);
-
-    // explicily declared by us, the views, unlike the images, need to be explicilty destroyed
-    for (auto imageView : swapChainImageViews) {
-        vkDestroyImageView(device, imageView, nullptr);
-    }
-
-    // destroy the swap chain before the device
-    vkDestroySwapchainKHR(device, swapChain, nullptr);
-    // remove the logical device, no direct interaction with instance to not passed as argument
+    // remove the logical device, no direct interaction with instance so not passed as argument
     vkDestroyDevice(device, nullptr);
 
     // if debug activated, remove the messenger
@@ -1169,6 +1247,33 @@ void HelloTriangleApplication::cleanup() {
 
     // terminate glfw
     glfwTerminate();
+}
+
+//
+// GLFW
+//
+
+void HelloTriangleApplication::initWindow() {
+    // initialise glfw library
+    glfwInit();
+
+    // set parameters
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // initially for opengl, so tell it not to create opengl context
+    //glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // disable resizing for now
+
+    // create the window, 4th param refs a monitor, 5th param is opengl related
+    window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+
+    // store an arbitrary pointer to a glfwwindow because glfw does not know how to call member function from a ptr to an instance of this class
+    glfwSetWindowUserPointer(window, this);
+    glfwSetFramebufferSizeCallback(window, framebufferResizeCallback); // tell the window what the call back for resizing is
+}
+
+void HelloTriangleApplication::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+    // pointer to this application class obtained from glfw, it doesnt know that it is a hellotriangleapplication but we do so we can cast to it
+    auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    // and set the resize flag to true
+    app->framebufferResized = true;
 }
 
 //

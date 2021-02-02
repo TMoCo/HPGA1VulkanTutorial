@@ -32,6 +32,10 @@ const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME // swap chain is the infrastructure that owns the buffers we will render, a queue of images waiting to go on the screen
 };
 
+// the number of frames that should be processed concurrently, called "in flight"
+const size_t MAX_FRAMES_IN_FLIGHT = 2;
+
+
 //
 // Debug preprocessor
 //
@@ -84,10 +88,6 @@ public:
     void run();
 
 private:
-    // functions to initiate the private members
-    // init glfw window
-    void initWindow();
-
     // init vulkan instance
     void initVulkan();
 
@@ -143,6 +143,10 @@ private:
 
     void createSwapChain();
 
+    void recreateSwapChain();
+
+    void cleanupSwapChain();
+
     // create a window surface
     void createSurface();
 
@@ -150,7 +154,7 @@ private:
 
     //--------------------------------------------------------------------//
 
-    void createSemaphores();
+    void createSyncObjects();
 
     //--------------------------------------------------------------------//
 
@@ -169,6 +173,14 @@ private:
 
     // destroys everything properly
     void cleanup();
+
+    //--------------------------------------------------------------------//
+
+    // functions to initiate the private members
+    // init glfw window
+    void initWindow();
+
+    static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
 
     //--------------------------------------------------------------------//
 
@@ -239,9 +251,16 @@ private:
     VkCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
 
-    // syncing
-    VkSemaphore imageAvailableSemaphore;
-    VkSemaphore renderFinishedSemaphore;
+    // each frame has it's own semaphores
+    // semaphores are for GPU-GPU synchronisation
+    std::vector<VkSemaphore> imageAvailableSemaphores;
+    std::vector<VkSemaphore> renderFinishedSemaphores;
+    // fences are for CPU-GPU synchronisation
+    std::vector<VkFence> inFlightFences;
+    std::vector<VkFence> imagesInFlight;
+    // keep track of the current frame
+    size_t currentFrame = 0;
+    bool framebufferResized = false;
 };
 
 #endif // !HELLO_TRIANGLE_APPLICATION_H
