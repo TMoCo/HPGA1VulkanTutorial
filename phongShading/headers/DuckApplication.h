@@ -92,6 +92,13 @@ struct Vertex {
     }
 };
 
+// a struct containing uniforms
+struct UniformBufferObject {
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+};
+
 // a struct for the queue family index
 struct QueueFamilyIndices {
     // queue family supporting drawing commands
@@ -140,6 +147,8 @@ private:
 
     void createRenderPass();
 
+    void createDescriptorSetLayout();
+
     //--------------------------------------------------------------------//
 
     void createFrameBuffers();
@@ -157,7 +166,18 @@ private:
 
     void createIndexBuffer();
 
+    void createUniformBuffers();
+
+    void createDescriptorPool();
+
+    void createDescriptorSets();
+
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+    //--------------------------------------------------------------------//
+
+    void createTextureImage();
+
 
     //--------------------------------------------------------------------//
 
@@ -206,6 +226,8 @@ private:
     void mainLoop();
 
     void drawFrame();
+
+    void updateUniformBuffer(uint32_t currentImage);
 
     //--------------------------------------------------------------------//
 
@@ -290,9 +312,15 @@ private:
     // index buffer
     VkBuffer indexBuffer;
     VkDeviceMemory indexBufferMemory;
+    // uniform buffers
+    std::vector<VkBuffer> uniformBuffers;
+    std::vector<VkDeviceMemory> uniformBuffersMemory;
 
-    // layout used to specify fragment uniforms, still required even if not used
     VkRenderPass renderPass;
+    // layout used to specify fragment uniforms, still required even if not used
+    VkDescriptorSetLayout descriptorSetLayout;
+    VkDescriptorPool descriptorPool;
+    std::vector<VkDescriptorSet> descriptorSets; // descriptor set handles
     VkPipelineLayout pipelineLayout;
     // the pipeline
     VkPipeline graphicsPipeline;

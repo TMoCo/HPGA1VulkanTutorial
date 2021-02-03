@@ -5,6 +5,17 @@
 #include <iostream> 
 #include <stdexcept>
 
+// transformations
+#define GLM_FORCE_RADIANS
+#include <glm/gtc/matrix_transform.hpp>
+
+// image loading
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
+// time 
+#include <chrono>
+
 // min, max
 #include <algorithm>
 
@@ -56,11 +67,16 @@ void DuckApplication::initVulkan() {
     createSwapChain();
     createImageViews();
     createRenderPass();
+    createDescriptorSetLayout();
     createGraphicsPipeline();
     createFrameBuffers();
     createCommandPool();
+    createTextureImage();
     createVertexBuffer();
     createIndexBuffer();
+    createUniformBuffers();
+    createDescriptorPool(); 
+    createDescriptorSets();
     createCommandBuffers();
     createSyncObjects();
 }
@@ -237,7 +253,7 @@ void DuckApplication::createGraphicsPipeline() {
     // NB any other mode than fill requires enabling a GPU feature
     rasterizer.lineWidth = 1.0f; // larger than 1.0f requires the wideLines GPU feature
     rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; // type of face culling to use (disable, cull front, cull back, cull both)
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE; // vertex order for faces to be front facing (CW and CCW)
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // vertex order for faces to be front facing (CW and CCW)
     rasterizer.depthBiasEnable = VK_FALSE; // alter the depth by adding a constant or based onthe fragment's slope
     rasterizer.depthBiasConstantFactor = 0.0f; // Optional
     rasterizer.depthBiasClamp = 0.0f; // Optional
@@ -272,6 +288,9 @@ void DuckApplication::createGraphicsPipeline() {
     // create the pipeline layout, where uniforms are specified, also push constants another way of passing dynamic values
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    // refernece to the descriptor layout (uniforms)
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
 
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
         throw std::runtime_error("failed to create pipeline layout!");
@@ -380,6 +399,27 @@ void DuckApplication::createRenderPass() {
     // explicitly create the renderpass
     if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
         throw std::runtime_error("failed to create render pass!");
+    }
+}
+
+void DuckApplication::createDescriptorSetLayout() {
+    // provide details about every descriptor binding used in the shaders
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    // specify binding used, descriptor type 
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1; // single uniform so only one, could be used to specify a transform for each bone in a skeletal animation
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; // in which shader stage is the descriptor going to be referenced
+    uboLayoutBinding.pImmutableSamplers = nullptr; // relevant to image sampling related descriptors
+
+    // descriptor set bindings combined into a descriptor set layour object, created the same way as other vk objects by filling a struct in
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1; // nulber of bindings
+    layoutInfo.pBindings = &uboLayoutBinding; // pointer to the bindings
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create descriptor set layout!");
     }
 }
 
@@ -499,7 +539,9 @@ void DuckApplication::createCommandBuffers() {
             vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
             // bind the index buffer, can only have a single index buffer 
             // params (-the nescessary cmd) bufferindex buffer, byte offset into it, type of data
-            vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT16); 
+            vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+            // bind the uniform descriptor sets
+            vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], 0, nullptr);
 
             // command to draw the vertices in the vertex buffer
             //vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0); 
@@ -674,6 +716,89 @@ void DuckApplication::createIndexBuffer() {
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
+void DuckApplication::createUniformBuffers() {
+    // specify what the size of the buffer is
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+    // resize the uniform buffer to be as big as the swap chain, each image has its own se of uniforms
+    uniformBuffers.resize(swapChainImages.size());
+    uniformBuffersMemory.resize(swapChainImages.size());
+
+    // loop over the images and create a uniform buffer for each
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+        createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
+    }
+}
+
+void DuckApplication::createDescriptorPool() {
+    // descriptor layout describes descriptors that can be bound. Create a descriptor set for each buffer. We need 
+    // to create a descriptor pool to get the descriptor set (much like the command pool for command queues)
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    // we will allocate one pool for each frame
+    poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = 1; // max nb of individual descriptors 
+    poolInfo.pPoolSizes = &poolSize; // the descriptors
+    // the maximum number of descriptor sets that may be allocated
+    poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
+
+    // create the descirptor pool
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create descriptor pool!");
+    }
+}
+
+void DuckApplication::createDescriptorSets() {
+    // create the descriptor set
+    std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    // specify the descriptor pool to allocate from
+    allocInfo.descriptorPool = descriptorPool;
+    // the number of descriptors to allocate
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+    // a pointer to the descriptor layout to base them on
+    allocInfo.pSetLayouts = layouts.data();
+
+    // resize the descriptor set container to accomodate for the descriptor sets, as many as there are frames
+    descriptorSets.resize(swapChainImages.size());
+    
+    // now attempt to create them. We don't need to explicitly clear the descriptor sets because they will be freed
+    // when the desciptor set is destroyed  
+    if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate descriptor sets!");
+    }
+
+    // loop over the created descriptor sets to configure them
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+        // the buffer and the region of it that contain the data for the descriptor
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = uniformBuffers[i]; // contents of buffer for image i
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBufferObject); // here this is the size of the whole buffer, we can use VK_WHOLE_SIZE instead
+
+        // the struct configuring the descriptor
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = descriptorSets[i]; // wich set to update
+        descriptorWrite.dstBinding = 0; // uniform buffer has binding 0
+        descriptorWrite.dstArrayElement = 0; // descriptors can be arrays, only one element so first index
+        // type of desciptor again
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrite.descriptorCount = 1; // can update multiple descriptors at once starting at dstArrayElement, descriptorCount specifies how many elements
+        // used for descriptors that use buffer data
+        descriptorWrite.pBufferInfo = &bufferInfo;
+        descriptorWrite.pImageInfo = nullptr; // for image data
+        descriptorWrite.pTexelBufferView = nullptr; // desciptors refering to buffer views
+
+        // update according to the configuration
+        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+    }
+}
+
 uint32_t DuckApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
     // GPUs allocate dufferent types of memory, varying in terms of allowed operations and performance. Combine buffer and application
     // requirements to find best type of memory
@@ -692,6 +817,10 @@ uint32_t DuckApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFl
     // otherwise we can't find the right type!
     throw std::runtime_error("failed to find suitable memory type!");
 }
+
+//
+// Textures
+//
 
 //
 // Device setup
@@ -1080,6 +1209,9 @@ void DuckApplication::recreateSwapChain() {
     // creation so needs to be recreated. NB we can avoid this using dynamic states
     createGraphicsPipeline();
     createFrameBuffers(); // directly depend on swap chain images so recreate
+    createUniformBuffers(); // depends on swap chain size so recreate
+    createDescriptorPool();
+    createDescriptorSets();
     createCommandBuffers(); // directly depend on swap chain images so recreate
 }
 
@@ -1105,6 +1237,15 @@ void DuckApplication::cleanupSwapChain() {
 
     // destroy the swap chain proper
     vkDestroySwapchainKHR(device, swapChain, nullptr);
+
+    // also destroy the uniform buffers that worked with the swap chain
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+        vkDestroyBuffer(device, uniformBuffers[i], nullptr);
+        vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
+    }
+
+    // cleanup the descriptor pool
+    vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 }
 
 void DuckApplication::createSurface() {
@@ -1229,6 +1370,9 @@ void DuckApplication::drawFrame() {
     // Mark the image as now being in use by this frame
     imagesInFlight[imageIndex] = inFlightFences[currentFrame];
 
+    // update the unifrom buffer before submitting
+    updateUniformBuffer(imageIndex);
+
     // info needed to submit the command buffer
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1288,6 +1432,29 @@ void DuckApplication::drawFrame() {
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
+void DuckApplication::updateUniformBuffer(uint32_t currentImage) {
+    // compute the time elapsed since rendering began
+    static auto startTime = std::chrono::high_resolution_clock::now();
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    UniformBufferObject ubo{};
+    // a simple rotation around the z axis
+    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // make the camera view the geometry from above at a 45° angle (eye pos, subject pos, up direction)
+    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // proect the scene with a 45° fov, use current swap chain extent to compute aspect ratio, near, far
+    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
+    // designed for openGL, so y coordinates are inverted
+    ubo.proj[1][1] *= -1;
+
+    // copy the uniform buffer object into the uniform buffer
+    void* data;
+    vkMapMemory(device, uniformBuffersMemory[currentImage], 0, sizeof(ubo), 0, &data);
+    memcpy(data, &ubo, sizeof(ubo));
+    vkUnmapMemory(device, uniformBuffersMemory[currentImage]);
+}
+
 //
 // Shaders
 //
@@ -1340,8 +1507,12 @@ VkShaderModule DuckApplication::createShaderModule(const std::vector<char>& code
 //
 
 void DuckApplication::cleanup() {
+
     // call the function we created for destroying the swap chain
     cleanupSwapChain();
+
+    // destroy the descriptor layout
+    vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
     // destroy the index buffer and free its memory
     vkDestroyBuffer(device, indexBuffer, nullptr);
