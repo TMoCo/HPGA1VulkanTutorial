@@ -31,10 +31,10 @@
 
 // a triangle of vertices, interleaving vertex attributes
 const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
 };
 
 // vertex index container
@@ -60,24 +60,36 @@ void DuckApplication::run() {
 
 void DuckApplication::initVulkan() {
     createInstance();
+
     setupDebugMessenger();
+
     createSurface();
+
     pickPhysicalDevice();
     createLogicalDevice();
     createSwapChain();
     createImageViews();
+
     createRenderPass();
     createDescriptorSetLayout();
     createGraphicsPipeline();
+
     createFrameBuffers();
     createCommandPool();
+
     createTextureImage();
+    createTextureImageView();
+    createTextureSampler();
+
     createVertexBuffer();
     createIndexBuffer();
+
     createUniformBuffers();
     createDescriptorPool(); 
     createDescriptorSets();
+
     createCommandBuffers();
+
     createSyncObjects();
 }
 
@@ -402,57 +414,193 @@ void DuckApplication::createRenderPass() {
     }
 }
 
+//
+// Descriptors
+//
+
 void DuckApplication::createDescriptorSetLayout() {
     // provide details about every descriptor binding used in the shaders
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
-    // specify binding used, descriptor type 
-    uboLayoutBinding.binding = 0;
-    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboLayoutBinding.descriptorCount = 1; // single uniform so only one, could be used to specify a transform for each bone in a skeletal animation
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; // this is a uniform descriptor
+    // specify binding used
+    uboLayoutBinding.binding = 0; // the first descriptor
+    uboLayoutBinding.descriptorCount = 1; // single uniform buffer object so just 1, could be used to specify a transform for each bone in a skeletal animation
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; // in which shader stage is the descriptor going to be referenced
     uboLayoutBinding.pImmutableSamplers = nullptr; // relevant to image sampling related descriptors
 
+    // same as above but for a texture sampler rather than for uniforms
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; // this is a sampler descriptor
+    samplerLayoutBinding.binding = 1; // the second descriptor
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; ;// the shader stage we wan the descriptor to be used in, ie the fragment shader stage
+    // can use the texture sampler in the vertex stage as part of a height map to deform the vertices in a grid
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+
+
+    // put the descriptors in an array
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerLayoutBinding };
     // descriptor set bindings combined into a descriptor set layour object, created the same way as other vk objects by filling a struct in
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1; // nulber of bindings
-    layoutInfo.pBindings = &uboLayoutBinding; // pointer to the bindings
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());; // number of bindings
+    layoutInfo.pBindings = bindings.data(); // pointer to the bindings
 
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor set layout!");
     }
 }
 
+void DuckApplication::createDescriptorPool() {
+    // descriptor layout describes descriptors that can be bound. Create a descriptor set for each buffer. We need 
+    // to create a descriptor pool to get the descriptor set (much like the command pool for command queues)
+    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    // we will allocate one pool for each frame
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; // the uniform buffer descriptor
+    poolSizes[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; // the sampler descriptor
+    poolSizes[1].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size()); // max nb of individual descriptors 
+    poolInfo.pPoolSizes = poolSizes.data(); // the descriptors
+    // the maximum number of descriptor sets that may be allocated
+    poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
+
+    // create the descirptor pool
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create descriptor pool!");
+    }
+}
+
+void DuckApplication::createDescriptorSets() {
+    // create the descriptor set
+    std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    // specify the descriptor pool to allocate from
+    allocInfo.descriptorPool = descriptorPool;
+    // the number of descriptors to allocate
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+    // a pointer to the descriptor layout to base them on
+    allocInfo.pSetLayouts = layouts.data();
+
+    // resize the descriptor set container to accomodate for the descriptor sets, as many as there are frames
+    descriptorSets.resize(swapChainImages.size());
+
+    // now attempt to create them. We don't need to explicitly clear the descriptor sets because they will be freed
+    // when the desciptor set is destroyed. The function may fail if the pool is not sufieciently large, but succeed other times 
+    // if the driver can solve the problem internally... so sometimes the driver will let us get away with an allocation
+    // outside of the limits of the desciptor pool, and other times fail! Goes without saying that this is different for every machine...
+    if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate descriptor sets!");
+    }
+
+    // loop over the created descriptor sets to configure them
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+        // the buffer and the region of it that contain the data for the descriptor
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = uniformBuffers[i]; // contents of buffer for image i
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBufferObject); // here this is the size of the whole buffer, we can use VK_WHOLE_SIZE instead
+
+        // bind the actual image and sampler to the descriptors in the descriptor set
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = textureImageView;
+        imageInfo.sampler = textureSampler;
+
+        // the struct configuring the descriptor set
+        std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+        // the uniform buffer
+        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet = descriptorSets[i]; // wich set to update
+        descriptorWrites[0].dstBinding = 0; // uniform buffer has binding 0
+        descriptorWrites[0].dstArrayElement = 0; // descriptors can be arrays, only one element so first index
+        // type of descriptor again
+        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[0].descriptorCount = 1; // can update multiple descriptors at once starting at dstArrayElement, descriptorCount specifies how many elements
+
+        descriptorWrites[0].pBufferInfo = &bufferInfo; // for descriptors that use buffer data
+        descriptorWrites[0].pImageInfo = nullptr; // for image data
+        descriptorWrites[0].pTexelBufferView = nullptr; // desciptors refering to buffer views
+
+        // the texture sampler
+        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[1].dstSet = descriptorSets[i];
+        descriptorWrites[1].dstBinding = 1; // sampler has binding 1
+        descriptorWrites[1].dstArrayElement = 0; // only one element so index 0
+        // type of descriptor again
+        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[1].descriptorCount = 1;
+
+        descriptorWrites[1].pBufferInfo = nullptr; // for descriptors that use buffer data
+        descriptorWrites[1].pImageInfo = &imageInfo; // for image data
+        descriptorWrites[1].pTexelBufferView = nullptr; // desciptors refering to buffer views
+
+        // update according to the configuration
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    }
+}
+
+void DuckApplication::createUniformBuffers() {
+    // specify what the size of the buffer is
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+    // resize the uniform buffer to be as big as the swap chain, each image has its own se of uniforms
+    uniformBuffers.resize(swapChainImages.size());
+    uniformBuffersMemory.resize(swapChainImages.size());
+
+    // loop over the images and create a uniform buffer for each
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+        createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
+    }
+}
+
+void DuckApplication::createTextureSampler() {
+    // configure the sampler
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    // how to interpolate texels that are magnified or minified
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    // addressing mode
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    // VK_SAMPLER_ADDRESS_MODE_REPEAT: Repeat the texture when going beyond the image dimensions.
+    // VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT: Like repeat, but inverts the coordinates to mirror the image when going beyond the dimensions.
+    // VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : Take the color of the edge closest to the coordinate beyond the image dimensions.
+    // VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE : Like clamp to edge, but instead uses the edge opposite to the closest edge.
+    // VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER : Return a solid color when sampling beyond the dimensions of the image
+
+    samplerInfo.anisotropyEnable = VK_TRUE; // use unless performance is a concern (IT WILL BE)
+    VkPhysicalDeviceProperties properties{}; // can query these here or at beginning for reference
+    vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+    // limites the amount of texel samples that can be used to calculate final colours, obtain from the device properties
+    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+    // self ecplanatory, can't be an arbitrary colour
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE; // which coordinate system we want to use to address texels! usually always normalised
+    // if comparison enabled, texels will be compared to a value and result is used in filtering (useful for shadow maps)
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    // mipmapping fields
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+
+    // now create the configured sampler
+    if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create texture sampler!");
+    }
+}
+
 //
 // Buffers (command, frame, vertex) setup
 //
-
-void DuckApplication::createFrameBuffers() {
-    // resize the container to hold all the framebuffers, or image views, in the swap chain
-    swapChainFramebuffers.resize(swapChainImageViews.size());
-
-    // now loop over the image views and create framebuffers from them
-    for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-        // get the attachment 
-        VkImageView attachments[] = {
-            swapChainImageViews[i]
-        };
-
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = renderPass; // which renderpass the framebuffer needs, only one at the moment
-        framebufferInfo.attachmentCount = 1; // the number of attachments, or VkImageView objects, to bind to the buffer
-        framebufferInfo.pAttachments = attachments; // pointer to the attachment(s)
-        framebufferInfo.width = swapChainExtent.width; // specify dimensions of framebuffer depending on swapchain dimensions
-        framebufferInfo.height = swapChainExtent.height;
-        framebufferInfo.layers = 1; // single images so only one layer
-
-        // attempt to create the framebuffer and place in the framebuffer container
-        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create framebuffer!");
-        }
-    }
-}
 
 void DuckApplication::createCommandPool() {
     // submit command buffers by submitting to one of the device queues, like graphics and presentation
@@ -531,36 +679,36 @@ void DuckApplication::createCommandBuffers() {
         // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS -> render pass commands executed from secondary command buffers
 
             // bind the graphics pipeline, second param determines if the object is a graphics or compute pipeline
-            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-            VkBuffer vertexBuffers[] = { vertexBuffer };
-            VkDeviceSize offsets[] = { 0 };
-            // bind the vertex buffer, can have many vertex buffers
-            vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
-            // bind the index buffer, can only have a single index buffer 
-            // params (-the nescessary cmd) bufferindex buffer, byte offset into it, type of data
-            vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
-            // bind the uniform descriptor sets
-            vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], 0, nullptr);
+        VkBuffer vertexBuffers[] = { vertexBuffer };
+        VkDeviceSize offsets[] = { 0 };
+        // bind the vertex buffer, can have many vertex buffers
+        vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+        // bind the index buffer, can only have a single index buffer 
+        // params (-the nescessary cmd) bufferindex buffer, byte offset into it, type of data
+        vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        // bind the uniform descriptor sets
+        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], 0, nullptr);
 
-            // command to draw the vertices in the vertex buffer
-            //vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0); 
-            // params :
-            // the command buffer
-            // instance count, for instance rendering, so only one here
-            // first vertex, offset into the vertex buffer. Defines lowest value of gl_VertexIndex
-            // first instance, offset for instance rendering. Defines lowest value of gl_InstanceIndex
+        // command to draw the vertices in the vertex buffer
+        //vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0); 
+        // params :
+        // the command buffer
+        // instance count, for instance rendering, so only one here
+        // first vertex, offset into the vertex buffer. Defines lowest value of gl_VertexIndex
+        // first instance, offset for instance rendering. Defines lowest value of gl_InstanceIndex
 
-            vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
-            // params :
-            // the command buffer
-            // the indices
-            // no instancing so only a single instance
-            // offset into index buffer
-            // offest to add to the indices in the index buffer
-            // offest for instancing
+        vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+        // params :
+        // the command buffer
+        // the indices
+        // no instancing so only a single instance
+        // offset into index buffer
+        // offest to add to the indices in the index buffer
+        // offest for instancing
 
-            // /!\ about vertex and index buffers /!\
+        // /!\ about vertex and index buffers /!\
             // The previous chapter already mentioned that should allocate multiple resources like buffers 
             // from a single memory allocation. Even better, Driver developers recommend to store multiple buffers, 
             // like the vertex and index buffer, into a single VkBuffer and use  offsets in commands like vkCmdBindVertexBuffers. 
@@ -572,6 +720,181 @@ void DuckApplication::createCommandBuffers() {
         // we've finished recording, so end recording and check for errors
         if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
+        }
+    }
+}
+
+VkCommandBuffer DuckApplication::beginSingleTimeCommands() {
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = commandPool;
+    allocInfo.commandBufferCount = 1;
+
+    // allocate the command buffer
+    VkCommandBuffer commandBuffer;
+    vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+
+    // set the struct for the command buffer
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // tell the driver about how the command buffer will be used for optimisation
+
+    // start recording the command buffer
+    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+    return commandBuffer;
+}
+
+void DuckApplication::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
+    // end recording
+    vkEndCommandBuffer(commandBuffer);
+
+    // execute the command buffer by completing the submitinfo struct
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+
+    // submit the queue for execution
+    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    // here we could use a fence to schedule multiple transfers simultaneously and wait for them to complete instead
+    // of executing all at the same time, alternatively use wait for the queue to execute
+    vkQueueWaitIdle(graphicsQueue);
+
+    // free the command buffer once the queue is no longer in use
+    vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+}
+
+void DuckApplication::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout) {
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+    // a common way to perform layout transitions is using an image memory barrier, generally for suncing acces to a ressourcem
+    // eg make sure write completes before subsequent read, but can transition image layout and transfer queue family ownership
+
+    // the barrier struct
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    // specify layout transition
+    barrier.oldLayout = oldLayout; // can use VK_IMAGE_LAYOUT_UNDEFINED if old layout is of no importance
+    barrier.newLayout = newLayout;
+    // indices of the two queue families
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; // explicit if we don't want to as not default value
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    // info about the image
+    barrier.image = image; // the image
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    // not an array and no mipmap 
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+
+    // we need to set the access mask and pipeline stages based on the layout in the transition
+    // we need to handle two transitions: 
+    // undefined -> transfer dest : transfer writes that don't need to wait on anything
+    // transfer dest -> shader reading : share read should wait on transfer write
+
+    // declare the stages 
+    VkPipelineStageFlags sourceStage;
+    VkPipelineStageFlags destinationStage;
+
+    // determine which of the two transitions we are executing
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+        // first transition
+        barrier.srcAccessMask = 0; // don't have to wait on anything for pre barrier operation
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT; // transfer writes must occur in the pipeline transfer stage, a pseudo-stage where transfers happen
+    }
+    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        // second transition
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; // wait on the transfer to finish writing
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT; 
+
+        sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    } // extend this function for other transitions
+    else {
+        // unrecognised transition
+        throw std::invalid_argument("unsupported layout transition!");
+    }
+
+
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        sourceStage, destinationStage,
+        0,
+        // arrays of pipeline barriers of three available types
+        0, nullptr, // memory barriers
+        0, nullptr, // buffer memory barriers
+        1, &barrier // image memory barriers
+    );
+
+    endSingleTimeCommands(commandBuffer);
+}
+
+void DuckApplication::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
+    // copying buffer to image
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+    
+    // need to specify which parts of the buffer we are going to copy to which part of the image
+    VkBufferImageCopy region{};
+    
+    // about the buffer area
+    region.bufferOffset = 0; // byte offset after which the pixels start
+    // how pixels are laid out in memory
+    region.bufferRowLength = 0; // 0 = tightly packed
+    region.bufferImageHeight = 0;
+
+    // about the image area, which part of te image we want to copy the pixels
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+
+    region.imageOffset = { 0, 0, 0 };
+    region.imageExtent = {
+        width,
+        height,
+        1
+    };
+
+    // buffer to image copy operations are enqueued thus
+    vkCmdCopyBufferToImage(
+        commandBuffer,
+        buffer,
+        image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, // which layout the image is currently using
+        1,
+        &region
+    );
+    endSingleTimeCommands(commandBuffer);
+}
+
+void DuckApplication::createFrameBuffers() {
+    // resize the container to hold all the framebuffers, or image views, in the swap chain
+    swapChainFramebuffers.resize(swapChainImageViews.size());
+
+    // now loop over the image views and create framebuffers from them
+    for (size_t i = 0; i < swapChainImageViews.size(); i++) {
+        // get the attachment 
+        VkImageView attachments[] = {
+            swapChainImageViews[i]
+        };
+
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = renderPass; // which renderpass the framebuffer needs, only one at the moment
+        framebufferInfo.attachmentCount = 1; // the number of attachments, or VkImageView objects, to bind to the buffer
+        framebufferInfo.pAttachments = attachments; // pointer to the attachment(s)
+        framebufferInfo.width = swapChainExtent.width; // specify dimensions of framebuffer depending on swapchain dimensions
+        framebufferInfo.height = swapChainExtent.height;
+        framebufferInfo.layers = 1; // single images so only one layer
+
+        // attempt to create the framebuffer and place in the framebuffer container
+        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create framebuffer!");
         }
     }
 }
@@ -617,23 +940,7 @@ void DuckApplication::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, 
 void DuckApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
     // memory transfer operations are executed using command buffers, like drawing commands. We need to allocate a temporary command buffer
     // could use a command pool for these short lived operations using the flag VK_COMMAND_POOL_CREATE_TRANSIENT_BIT 
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = commandPool;
-    allocInfo.commandBufferCount = 1;
-
-    // allocate the command buffer
-    VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
-
-    // set the struct for the command buffer
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // tell the driver about how the command buffer will be used for optimisation
-
-    // start recording the command buffer
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
     // defines the region of 
     VkBufferCopy copyRegion{};
@@ -643,23 +950,7 @@ void DuckApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDevic
     copyRegion.size = size; // can't be VK_WHOLE_SIZE here like vkMapMemory
     vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
-    // end recording
-    vkEndCommandBuffer(commandBuffer);
-
-    // execute the command buffer by completing the submitinfo struct
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-
-    // submit the queue for execution
-    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    // here we could use a fence to schedule multiple transfers simultaneously and wait for them to complete instead
-    // of executing all at the same time, alternatively use wait for the queue to execute
-    vkQueueWaitIdle(graphicsQueue);
-
-    // free the command buffer once the queue is no longer in use
-    vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+    endSingleTimeCommands(commandBuffer);
 }
 
 void DuckApplication::createVertexBuffer() {
@@ -716,89 +1007,6 @@ void DuckApplication::createIndexBuffer() {
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void DuckApplication::createUniformBuffers() {
-    // specify what the size of the buffer is
-    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
-
-    // resize the uniform buffer to be as big as the swap chain, each image has its own se of uniforms
-    uniformBuffers.resize(swapChainImages.size());
-    uniformBuffersMemory.resize(swapChainImages.size());
-
-    // loop over the images and create a uniform buffer for each
-    for (size_t i = 0; i < swapChainImages.size(); i++) {
-        createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
-    }
-}
-
-void DuckApplication::createDescriptorPool() {
-    // descriptor layout describes descriptors that can be bound. Create a descriptor set for each buffer. We need 
-    // to create a descriptor pool to get the descriptor set (much like the command pool for command queues)
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    // we will allocate one pool for each frame
-    poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
-
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1; // max nb of individual descriptors 
-    poolInfo.pPoolSizes = &poolSize; // the descriptors
-    // the maximum number of descriptor sets that may be allocated
-    poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
-
-    // create the descirptor pool
-    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create descriptor pool!");
-    }
-}
-
-void DuckApplication::createDescriptorSets() {
-    // create the descriptor set
-    std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    // specify the descriptor pool to allocate from
-    allocInfo.descriptorPool = descriptorPool;
-    // the number of descriptors to allocate
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
-    // a pointer to the descriptor layout to base them on
-    allocInfo.pSetLayouts = layouts.data();
-
-    // resize the descriptor set container to accomodate for the descriptor sets, as many as there are frames
-    descriptorSets.resize(swapChainImages.size());
-    
-    // now attempt to create them. We don't need to explicitly clear the descriptor sets because they will be freed
-    // when the desciptor set is destroyed  
-    if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate descriptor sets!");
-    }
-
-    // loop over the created descriptor sets to configure them
-    for (size_t i = 0; i < swapChainImages.size(); i++) {
-        // the buffer and the region of it that contain the data for the descriptor
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = uniformBuffers[i]; // contents of buffer for image i
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(UniformBufferObject); // here this is the size of the whole buffer, we can use VK_WHOLE_SIZE instead
-
-        // the struct configuring the descriptor
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = descriptorSets[i]; // wich set to update
-        descriptorWrite.dstBinding = 0; // uniform buffer has binding 0
-        descriptorWrite.dstArrayElement = 0; // descriptors can be arrays, only one element so first index
-        // type of desciptor again
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrite.descriptorCount = 1; // can update multiple descriptors at once starting at dstArrayElement, descriptorCount specifies how many elements
-        // used for descriptors that use buffer data
-        descriptorWrite.pBufferInfo = &bufferInfo;
-        descriptorWrite.pImageInfo = nullptr; // for image data
-        descriptorWrite.pTexelBufferView = nullptr; // desciptors refering to buffer views
-
-        // update according to the configuration
-        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
-    }
-}
-
 uint32_t DuckApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
     // GPUs allocate dufferent types of memory, varying in terms of allowed operations and performance. Combine buffer and application
     // requirements to find best type of memory
@@ -821,6 +1029,128 @@ uint32_t DuckApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFl
 //
 // Textures
 //
+
+void DuckApplication::createTextureImage() {
+    // uses command buffer so should be called after create command pool
+    int texWidth, texHeight, texChannels;
+
+    // load the file 
+    stbi_uc* pixels = stbi_load("C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\assets\\SML2_Wario_500.jpg", 
+        &texWidth, &texHeight, &texChannels, STBI_rgb_alpha); // forces image to be loaded with an alpha channel, returns ptr to first element in an array of pixels
+    // laid out row by row with 4 bytes by pixel in case of STBI_rgb_alpha
+    VkDeviceSize imageSize = texWidth * texHeight * 4;
+    if (!pixels) {
+        throw std::runtime_error("failed to load texture image!");
+    }
+
+    // create a staging buffer in host visible memory so we can map it, not device memory although that is our destination
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+
+    createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+        stagingBuffer, stagingBufferMemory);
+
+    // directly copy the pixels in the array from the image loading library to the buffer
+    void* data;
+    vkMapMemory(device, stagingBufferMemory, 0, imageSize, 0, &data);
+    memcpy(data, pixels, static_cast<size_t>(imageSize));
+    vkUnmapMemory(device, stagingBufferMemory);
+
+    // and cleanup pixels after copying in the data
+    stbi_image_free(pixels);
+
+    // now create the image
+    createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory);
+
+    // next step is to copy the staging buffer to the texture image using our helper functions
+    transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL); // specify the initial layout VK_IMAGE_LAYOUT_UNDEFINED
+    copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+    // need another transfer to give the shader access to the texture
+    transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    // cleanup the staging buffer and its memory
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingBufferMemory, nullptr);
+}
+
+void DuckApplication::createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
+    VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory) {
+    // create the struct for creating an image
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D; // coordinate system of the texels
+    imageInfo.extent.width = width; // the dimensions of the image
+    imageInfo.extent.height = height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1; // no mip mapping yet
+    imageInfo.arrayLayers = 1; // not in array yet
+    imageInfo.format = format; // same format as the pixels is best
+    imageInfo.tiling = tiling; // tiling of the pixels, let vulkan lay them out
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = usage; // same semantics as during buffer creation, here as destination for the buffer copy
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT; // for multisampling
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // used by a single queue family
+    imageInfo.flags = 0; // Optional, for sparse data
+
+    // create the image. The hardware could fail for the format we have specified. We should have a list of acceptable formats and choose the best one depending
+    // on the selection of formats supported by the device
+    if (vkCreateImage(device, &imageInfo, nullptr, &textureImage) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create image!");
+    }
+
+    // allocate memory for an image, similar to a buffer allocation
+    VkMemoryRequirements memRequirements;
+    vkGetImageMemoryRequirements(device, textureImage, &memRequirements);
+
+    // info on the allocation
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    // attempt to create an image
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &textureImageMemory) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate image memory!");
+    }
+
+    // associate the memory to the image
+    vkBindImageMemory(device, textureImage, textureImageMemory, 0);
+}
+
+void DuckApplication::createTextureImageView() {
+    // just like we need views for the swap chain images, so do we need a view for the texture image view
+    textureImageView = createImageView(textureImage, VK_FORMAT_R8G8B8A8_SRGB);
+}
+
+VkImageView DuckApplication::createImageView(VkImage image, VkFormat format) {
+    // helper function for creating image views with a specific format
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = image; // different image, should refer to the texture
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // image as 1/2/3D textures and cube maps
+    viewInfo.format = format;// how the image data should be interpreted
+    // lets us swizzle colour channels around (here there is no swizzle)
+    viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+    viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+    viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+    viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+    // describe what the image purpose is and what part of the image 
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    // attemp to create the image view
+    VkImageView imageView;
+    if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create texture image view!");
+    }
+
+    // and return the image view
+    return imageView;
+}
 
 //
 // Device setup
@@ -855,6 +1185,7 @@ void DuckApplication::createLogicalDevice() {
 
     // queries support certain features (like geometry shaders, other things in the vulkan pipeline...)
     VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.samplerAnisotropy = VK_TRUE; // we want the device to use anisotropic filtering if available
 
     // the struct containing the device info
     VkDeviceCreateInfo createInfo{};
@@ -944,8 +1275,12 @@ bool DuckApplication::isDeviceSuitable(VkPhysicalDevice device) {
         swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
     }
 
+    // get the device's supported features
+    VkPhysicalDeviceFeatures supportedFeatures;
+    vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
+
     // return the queue family index (true if a value was initialised), device supports extension and swap chain is adequate (phew)
-    return indices.isComplete() && extensionsSupported && swapChainAdequate;
+    return indices.isComplete() && extensionsSupported && swapChainAdequate && supportedFeatures.samplerAnisotropy;
 }
 
 bool DuckApplication::checkDeviceExtensionSupport(VkPhysicalDevice device) {
@@ -1259,31 +1594,9 @@ void DuckApplication::createSurface() {
 void DuckApplication::createImageViews() {
     // resize the vector of views to accomodate the images
     swapChainImageViews.resize(swapChainImages.size());
-
-    // loop to iterate through images
+    // loop to iterate through images and create a view for each
     for (size_t i = 0; i < swapChainImages.size(); i++) {
-        // a view struct for each image
-        VkImageViewCreateInfo createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        createInfo.image = swapChainImages[i]; // the image this is a view of
-        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // image as 1/2/3D textures and cube maps
-        createInfo.format = swapChainImageFormat; // how the image data should be interpreted
-        // lets us swizzle colour channels around (here there is no swizzle)
-        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        // describe what the image purpose is and what part of the image 
-        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        createInfo.subresourceRange.baseMipLevel = 0;
-        createInfo.subresourceRange.levelCount = 1;
-        createInfo.subresourceRange.baseArrayLayer = 0;
-        createInfo.subresourceRange.layerCount = 1;
-
-        // create the view
-        if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create image views!");
-        }
+        swapChainImageViews[i] = createImageView(swapChainImages[i], swapChainImageFormat);
     }
 }
 
@@ -1510,6 +1823,14 @@ void DuckApplication::cleanup() {
 
     // call the function we created for destroying the swap chain
     cleanupSwapChain();
+
+    // destroy the texture image view and sampler
+    vkDestroySampler(device, textureSampler, nullptr);
+    vkDestroyImageView(device, textureImageView, nullptr);
+
+    // destroy the texture
+    vkDestroyImage(device, textureImage, nullptr);
+    vkFreeMemory(device, textureImageMemory, nullptr);
 
     // destroy the descriptor layout
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);

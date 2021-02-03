@@ -60,8 +60,10 @@ const bool enableVerboseValidation = false;
 
 // a simple vertex struct
 struct Vertex {
-    glm::vec2 pos;
-    glm::vec3 color;
+    glm::vec2 pos; // position 
+    glm::vec3 color; // colour
+    glm::vec2 texCoord; // texture coordinate
+
 
     // binding description of a vertex
     static VkVertexInputBindingDescription getBindingDescription() {
@@ -74,10 +76,10 @@ struct Vertex {
         return bindingDescription;
     }
 
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
+    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions() {
         // we have two attributes: position and colour. The struct describes how to extract an attribute
         // from a chunk of vertex data from a binding description
-        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
         // position
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
@@ -88,6 +90,11 @@ struct Vertex {
         attributeDescriptions[1].location = 1;
         attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[1].offset = offsetof(Vertex, color);
+        // tex coord
+        attributeDescriptions[2].binding = 0;
+        attributeDescriptions[2].location = 2;
+        attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
         return attributeDescriptions;
     }
 };
@@ -151,11 +158,19 @@ private:
 
     //--------------------------------------------------------------------//
 
-    void createFrameBuffers();
-
     void createCommandPool();
 
     void createCommandBuffers();
+
+    VkCommandBuffer beginSingleTimeCommands();
+
+    void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+
+    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+
+    void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+
+    void createFrameBuffers();
 
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, 
         VkBuffer& buffer, VkDeviceMemory& bufferMemory);
@@ -178,6 +193,14 @@ private:
 
     void createTextureImage();
 
+    void createTextureImageView();
+
+    void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, 
+        VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
+    
+    VkImageView createImageView(VkImage image, VkFormat format);
+
+    void createTextureSampler();
 
     //--------------------------------------------------------------------//
 
@@ -315,6 +338,12 @@ private:
     // uniform buffers
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
+
+    // a texture
+    VkImage textureImage;
+    VkImageView textureImageView;
+    VkSampler textureSampler; // lets us sample from an image, here the texture
+    VkDeviceMemory textureImageMemory;
 
     VkRenderPass renderPass;
     // layout used to specify fragment uniforms, still required even if not used
