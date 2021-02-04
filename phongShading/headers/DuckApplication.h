@@ -24,6 +24,9 @@
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
 
+const std::string MODEL_PATH = "C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\assets\\12248_Bird_v1_L2.obj";
+const std::string TEXTURE_PATH = "textures/viking_room.png";
+
 // validation layers for debugging
 const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
@@ -60,7 +63,7 @@ const bool enableVerboseValidation = false;
 
 // a simple vertex struct
 struct Vertex {
-    glm::vec2 pos; // position 
+    glm::vec3 pos; // position 
     glm::vec3 color; // colour
     glm::vec2 texCoord; // texture coordinate
 
@@ -83,7 +86,7 @@ struct Vertex {
         // position
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[0].offset = offsetof(Vertex, pos);
         // colour
         attributeDescriptions[1].binding = 0;
@@ -114,7 +117,7 @@ struct QueueFamilyIndices {
     std::optional<uint32_t> presentFamily;
 
     // returns true if the device supports the drawing commands AND the image can be presented to the surface
-    bool isComplete() {
+    inline bool isComplete() {
         return graphicsFamily.has_value() && presentFamily.has_value();
     }
 };
@@ -154,7 +157,25 @@ private:
 
     void createRenderPass();
 
+    void createDepthResources();
+
+    VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
+
+    VkFormat findDepthFormat();
+
+    bool hasStencilComponent(VkFormat format);
+
+    //--------------------------------------------------------------------//
+
     void createDescriptorSetLayout();
+
+    void createDescriptorPool();
+
+    void createDescriptorSets();
+
+    void createUniformBuffers();
+
+    void createTextureSampler();
 
     //--------------------------------------------------------------------//
 
@@ -181,12 +202,6 @@ private:
 
     void createIndexBuffer();
 
-    void createUniformBuffers();
-
-    void createDescriptorPool();
-
-    void createDescriptorSets();
-
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     //--------------------------------------------------------------------//
@@ -198,9 +213,7 @@ private:
     void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, 
         VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
     
-    VkImageView createImageView(VkImage image, VkFormat format);
-
-    void createTextureSampler();
+    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
 
     //--------------------------------------------------------------------//
 
@@ -338,6 +351,11 @@ private:
     // uniform buffers
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
+
+    // depth image
+    VkImage depthImage;
+    VkDeviceMemory depthImageMemory;
+    VkImageView depthImageView;
 
     // a texture
     VkImage textureImage;
