@@ -1,0 +1,13 @@
+﻿  DuckApplication.cpp
+C:\Users\Tommy\Documents\COMP4\5822HighPerformanceGraphics\A1\HPGA1VulkanTutorial\phongShading\source\DuckApplication.cpp(1132,45): warning C4267: 'argument': conversion from 'size_t' to '_Ty', possible loss of data
+          with
+          [
+              _Ty=uint32_t
+          ]
+  main.cpp
+  Generating code
+  16 of 2727 functions ( 0.6%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    12 functions had inline decision re-evaluated but remain unchanged
+  Finished generating code
+  phongShading.vcxproj -> C:\Users\Tommy\Documents\COMP4\5822HighPerformanceGraphics\A1\HPGA1VulkanTutorial\phongShading\x64\Release\phongShading.exe

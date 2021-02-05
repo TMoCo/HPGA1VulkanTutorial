@@ -1,0 +1,4 @@
+﻿  DuckApplication.cpp
+  main.cpp
+  Generating Code...
+assets\mallard.obj : fatal error LNK1136: invalid or corrupt file
