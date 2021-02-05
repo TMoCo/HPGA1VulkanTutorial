@@ -24,8 +24,8 @@
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
 
-const std::string MODEL_PATH = "C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\assets\\12248_Bird_v1_L2.obj";
-const std::string TEXTURE_PATH = "textures/viking_room.png";
+const std::string MODEL_PATH = "C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\assets\\mallard.obj";
+const std::string TEXTURE_PATH = "C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\assets\\mallard.jpg";
 
 // validation layers for debugging
 const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
@@ -64,6 +64,7 @@ const bool enableVerboseValidation = false;
 // a simple vertex struct
 struct Vertex {
     glm::vec3 pos; // position 
+    glm::vec3 normal; // normal
     glm::vec3 color; // colour
     glm::vec2 texCoord; // texture coordinate
 
@@ -79,25 +80,30 @@ struct Vertex {
         return bindingDescription;
     }
 
-    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions() {
+    static std::array<VkVertexInputAttributeDescription, 4> getAttributeDescriptions() {
         // we have two attributes: position and colour. The struct describes how to extract an attribute
         // from a chunk of vertex data from a binding description
-        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
+        std::array<VkVertexInputAttributeDescription, 4> attributeDescriptions{};
         // position
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
         attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[0].offset = offsetof(Vertex, pos);
-        // colour
+        // normal
         attributeDescriptions[1].binding = 0;
         attributeDescriptions[1].location = 1;
         attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[1].offset = offsetof(Vertex, color);
-        // tex coord
+        attributeDescriptions[1].offset = offsetof(Vertex, normal);
+        // colour
         attributeDescriptions[2].binding = 0;
         attributeDescriptions[2].location = 2;
-        attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-        attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
+        attributeDescriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attributeDescriptions[2].offset = offsetof(Vertex, color);
+        // tex coord
+        attributeDescriptions[3].binding = 0;
+        attributeDescriptions[3].location = 3;
+        attributeDescriptions[3].format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[3].offset = offsetof(Vertex, texCoord);
         return attributeDescriptions;
     }
 };
@@ -198,11 +204,15 @@ private:
 
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+    //--------------------------------------------------------------------//
+    
+    void loadModel(); 
+
     void createVertexBuffer();
 
     void createIndexBuffer();
-
-    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     //--------------------------------------------------------------------//
 
@@ -342,7 +352,10 @@ private:
     // a vector containing all the framebuffers
     std::vector<VkFramebuffer> swapChainFramebuffers;
 
+    // object data
     // vertex buffer
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
     // index buffer

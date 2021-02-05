@@ -15,6 +15,7 @@
 #include <stb_image.h>
 
 // model loading
+#define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
 // time 
@@ -31,26 +32,6 @@
 
 // set for queues
 #include <set>
-
-
-// a triangle of vertices, interleaving vertex attributes
-const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-};
-
-// vertex index container
-const std::vector<uint16_t> indices = {
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
-};
 
 //
 // Run application
@@ -92,6 +73,7 @@ void DuckApplication::initVulkan() {
     createTextureImageView();
     createTextureSampler();
 
+    loadModel();
     createVertexBuffer();
     createIndexBuffer();
 
@@ -702,7 +684,7 @@ void DuckApplication::createTextureSampler() {
 }
 
 //
-// Buffers (command, frame, vertex) setup
+// Buffers (command, frame) setup
 //
 
 void DuckApplication::createCommandPool() {
@@ -792,7 +774,7 @@ void DuckApplication::createCommandBuffers() {
         vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
         // bind the index buffer, can only have a single index buffer 
         // params (-the nescessary cmd) bufferindex buffer, byte offset into it, type of data
-        vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         // bind the uniform descriptor sets
         vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], 0, nullptr);
 
@@ -1086,6 +1068,72 @@ void DuckApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDevic
     endSingleTimeCommands(commandBuffer);
 }
 
+uint32_t DuckApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+    // GPUs allocate dufferent types of memory, varying in terms of allowed operations and performance. Combine buffer and application
+    // requirements to find best type of memory
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+    // two arrays in the struct, memoryTypes and memoryHeaps. Heaps are distinct ressources like VRAM and swap space in RAM
+    // types exist within these heaps
+
+    // loop over the device memory types to find the right one
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        // we want a memory type that is suitable for the vertex buffer, but also able to write our vertex data to memory
+        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+    // otherwise we can't find the right type!
+    throw std::runtime_error("failed to find suitable memory type!");
+}
+
+//
+// model
+//
+
+void DuckApplication::loadModel() {
+    // setup variables to get model info
+    tinyobj::attrib_t attrib; // contains all the positions, normals, textures and faces
+    std::vector<tinyobj::shape_t> shapes; // all the separate objects and their faces
+    std::vector<tinyobj::material_t> materials; // object materials
+    std::string warn, err;
+
+    // load the model, show error if not
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
+        throw std::runtime_error(warn + err);
+    }
+
+    // combine all the shapes into a single model
+    for (const auto& shape : shapes) {
+        for (const auto& index : shape.mesh.indices) {
+            Vertex vertex{};
+
+            // set vertex data
+            vertex.pos = {
+                attrib.vertices[3 * index.vertex_index + 0],
+                attrib.vertices[3 * index.vertex_index + 1],
+                attrib.vertices[3 * index.vertex_index + 2]
+            };
+
+            vertex.normal = {
+                attrib.normals[3 * index.normal_index + 0],
+                attrib.normals[3 * index.normal_index + 1],
+                attrib.normals[3 * index.normal_index + 2]
+            };
+
+            vertex.texCoord = {
+                attrib.texcoords[2 * index.texcoord_index + 0],
+                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+            };
+
+            vertex.color = { 1.0f, 1.0f, 1.0f };
+
+            vertices.push_back(vertex);
+            indices.push_back(indices.size());
+        }
+    }
+}
+
 void DuckApplication::createVertexBuffer() {
     // precompute buffer size
     VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
@@ -1107,7 +1155,7 @@ void DuckApplication::createVertexBuffer() {
     // possible issues as driver may not immediately copy data into buffer memory, writes to buffer may not be visible in mapped memory yet...
     // either use a heap that is host coherent (VK_MEMORY_PROPERTY_HOST_COHERENT_BIT in memory requirements)
     // or call vkFlushMappedMemoryRanges after writing to mapped memory, and call vkInvalidateMappedMemoryRanges before reading from the mapped memory
-    
+
     // create the vertex buffer, now the memory is device local (faster)
     createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
     // VK_BUFFER_USAGE_TRANSFER_DST_BIT: Buffer can be used as destination in a memory transfer operation
@@ -1120,7 +1168,7 @@ void DuckApplication::createVertexBuffer() {
 
 void DuckApplication::createIndexBuffer() {
     // almost identical to the vertex buffer creation process except where commented
-    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size(); 
+    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -1138,25 +1186,6 @@ void DuckApplication::createIndexBuffer() {
 
     vkDestroyBuffer(device, stagingBuffer, nullptr);
     vkFreeMemory(device, stagingBufferMemory, nullptr);
-}
-
-uint32_t DuckApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
-    // GPUs allocate dufferent types of memory, varying in terms of allowed operations and performance. Combine buffer and application
-    // requirements to find best type of memory
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-    // two arrays in the struct, memoryTypes and memoryHeaps. Heaps are distinct ressources like VRAM and swap space in RAM
-    // types exist within these heaps
-
-    // loop over the device memory types to find the right one
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-        // we want a memory type that is suitable for the vertex buffer, but also able to write our vertex data to memory
-        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
-        }
-    }
-    // otherwise we can't find the right type!
-    throw std::runtime_error("failed to find suitable memory type!");
 }
 
 //
@@ -1892,12 +1921,15 @@ void DuckApplication::updateUniformBuffer(uint32_t currentImage) {
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     UniformBufferObject ubo{};
+    // translate the model in the positive z axis
+    ubo.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -30.0f, -85.0f));
+    ubo.model = glm::rotate(ubo.model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     // a simple rotation around the z axis
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.model = glm::rotate(ubo.model, time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     // make the camera view the geometry from above at a 45° angle (eye pos, subject pos, up direction)
-    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::mat4(1.0f); //glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     // proect the scene with a 45° fov, use current swap chain extent to compute aspect ratio, near, far
-    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
+    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 100.0f);
     // designed for openGL, so y coordinates are inverted
     ubo.proj[1][1] *= -1;
 

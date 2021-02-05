@@ -1,16 +1,27 @@
 # 3ds Max Wavefront OBJ Exporter v0.97b - (c)2007 guruware
 # File Created: 09.12.2011 14:44:16
 
-newmtl 12248_Bird_v1
+newmtl mallard
+	# specular exponent
 	Ns 28.0000
+	# index of refraction
 	Ni 1.5000
+	# material dissolve
 	d 1.0000
+	# ????
 	Tr 0.0000
+	# transmission filter (light passing through is filtered, here nothing passes because values are 1)
 	Tf 1.0000 1.0000 1.0000 
+	# illumination model
 	illum 2
+	# ambient
 	Ka 1.0000 1.0000 1.0000
+	# diffuse
 	Kd 1.0000 1.0000 1.0000
+	# specular
 	Ks 0.2880 0.2880 0.2880
+	# emissive
 	Ke 0.0000 0.0000 0.0000
-	map_Ka 12248_Bird_v1_diff.jpg
-	map_Kd 12248_Bird_v1_diff.jpg
+	# ??
+	map_Ka mallard.jpg
+	map_Kd mallard.jpg
