@@ -8,6 +8,10 @@
 // vectors, matrices ...
 #include <glm/glm.hpp>
 
+// reporting and propagating exceptions
+#include <iostream> 
+#include <stdexcept>
+
 // very handy containers of objects
 #include <vector>
 #include <array>
@@ -135,9 +139,19 @@ struct SwapChainSupportDetails {
     std::vector<VkPresentModeKHR> presentModes;
 };
 
+
 //
 // The application
 //
+
+// from the ImGui example code
+static void check_vk_result(VkResult err) {
+    if (err == 0)
+        return;
+    fprintf(stderr, "[vulkan] Error: VkResult = %d\n", err);
+    if (err < 0)
+        abort();
+}
 
 // program wrapped in class where vulkan objects are stored as private members
 class DuckApplication {
@@ -145,7 +159,10 @@ public:
     void run();
 
 private:
-    // init vulkan instance
+    void initImGui();
+
+    //--------------------------------------------------------------------//
+
     void initVulkan();
 
     //--------------------------------------------------------------------//
@@ -163,6 +180,8 @@ private:
 
     void createRenderPass();
 
+    void createImGuiRenderPass();
+
     void createDepthResources();
 
     VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
@@ -177,6 +196,8 @@ private:
 
     void createDescriptorPool();
 
+    void createImGuiDescriptorPool();
+
     void createDescriptorSets();
 
     void createUniformBuffers();
@@ -185,13 +206,13 @@ private:
 
     //--------------------------------------------------------------------//
 
-    void createCommandPool();
+    void createCommandPool(VkCommandPool* commandPool, VkCommandPoolCreateFlags flags);
 
-    void createCommandBuffers();
+    void createCommandBuffers(std::vector<VkCommandBuffer>* commandBuffers, VkCommandPool& commandPool);
 
-    VkCommandBuffer beginSingleTimeCommands();
+    VkCommandBuffer beginSingleTimeCommands(VkCommandPool& commandBuffer);
 
-    void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+    void endSingleTimeCommands(VkCommandBuffer* commandBuffer, VkCommandPool* commandPool);
 
     void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
 
@@ -272,6 +293,10 @@ private:
     void mainLoop();
 
     void drawFrame();
+
+    void drawImGuiFrame();
+
+    void presentImGuiFrame();
 
     void updateUniformBuffer(uint32_t currentImage);
 
@@ -376,18 +401,28 @@ private:
     VkSampler textureSampler; // lets us sample from an image, here the texture
     VkDeviceMemory textureImageMemory;
 
+    // the geometry render pass
     VkRenderPass renderPass;
+    // the imgui render pass
+    VkRenderPass imGuiRenderPass;
+
+
     // layout used to specify fragment uniforms, still required even if not used
     VkDescriptorSetLayout descriptorSetLayout;
     VkDescriptorPool descriptorPool;
+    VkDescriptorPool imGuiDescriptorPool;
     std::vector<VkDescriptorSet> descriptorSets; // descriptor set handles
     VkPipelineLayout pipelineLayout;
     // the pipeline
     VkPipeline graphicsPipeline;
 
     // command buffers
-    VkCommandPool commandPool;
-    std::vector<VkCommandBuffer> commandBuffers;
+    VkCommandPool renderCommandPool;
+    std::vector<VkCommandBuffer> renderCommandBuffers;
+
+    // imgui command buffers
+    VkCommandPool imGuiCommandPool;
+    std::vector<VkCommandBuffer> imGuiCommandBuffers;
 
     // each frame has it's own semaphores
     // semaphores are for GPU-GPU synchronisation
