@@ -160,6 +160,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="headers\DuckApplication.h" />
+    <ClInclude Include="headers\Utils.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="source\shaders\compile.bat" />

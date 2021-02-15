@@ -21,47 +21,6 @@
 #include <optional>
 
 //
-// Constants
-//
-
-// constants for window dimensions
-const uint32_t WIDTH = 800;
-const uint32_t HEIGHT = 600;
-
-const std::string MODEL_PATH = "C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\assets\\mallard.obj";
-const std::string TEXTURE_PATH = "C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\assets\\mallard.jpg";
-
-// validation layers for debugging
-const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
-
-// required device extensions
-const std::vector<const char*> deviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME 
-};
-
-// in flight frames number
-const size_t MAX_FRAMES_IN_FLIGHT = 2;
-
-//
-// Debug preprocessor
-//
-
-//#define NDEBUG // uncomment to remove validation layers for debug
-#ifdef NDEBUG
-const bool enableValidationLayers = false;
-#else
-const bool enableValidationLayers = true;
-#endif
-
-//#define VERBOSE
-#ifdef VERBOSE
-const bool enableVerboseValidation = true;
-#else
-const bool enableVerboseValidation = false;
-#endif
-
-
-//
 // Helper structs
 //
 
@@ -143,15 +102,6 @@ struct SwapChainSupportDetails {
 //
 // The application
 //
-
-// from the ImGui example code
-static void check_vk_result(VkResult err) {
-    if (err == 0)
-        return;
-    fprintf(stderr, "[vulkan] Error: VkResult = %d\n", err);
-    if (err < 0)
-        abort();
-}
 
 // program wrapped in class where vulkan objects are stored as private members
 class DuckApplication {

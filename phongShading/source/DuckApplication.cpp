@@ -1,6 +1,9 @@
 // include class definition
 #include "..\headers\DuckApplication.h"
 
+// include constants
+#include "..\headers\Utils.h"
+
 // transformations
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE // because OpenGL uses depth range -1.0 - 1.0 and Vulkan uses 0.0 - 1.0
@@ -92,7 +95,7 @@ void DuckApplication::initImGui() {
     init_info.MinImageCount = static_cast<uint32_t>(swapChainImages.size());
     // how many framwbuffers
     init_info.ImageCount = static_cast<uint32_t>(swapChainFramebuffers.size());
-    init_info.CheckVkResultFn = check_vk_result; // our own error handling function
+    //init_info.CheckVkResultFn = check_vk_result; // our own error handling function
 
     createImGuiRenderPass();
 

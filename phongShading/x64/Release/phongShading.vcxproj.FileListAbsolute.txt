@@ -1,1 +1,0 @@
-C:\Users\Tommy\Documents\COMP4\5822HighPerformanceGraphics\A1\HPGA1VulkanTutorial\phongShading\x64\Release\phongShading.exe
