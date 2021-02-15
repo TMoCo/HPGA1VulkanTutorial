@@ -1,4 +1,2 @@
-﻿  DuckApplication.cpp
-  main.cpp
-  Generating Code...
-assets\mallard.obj : fatal error LNK1136: invalid or corrupt file
+﻿LINK : warning LNK4098: defaultlib 'MSVCRT' conflicts with use of other libs; use /NODEFAULTLIB:library
+  phongShading.vcxproj -> C:\Users\Tommy\Documents\COMP4\5822HighPerformanceGraphics\A1\HPGA1VulkanTutorial\phongShading\x64\Debug\phongShading.exe
