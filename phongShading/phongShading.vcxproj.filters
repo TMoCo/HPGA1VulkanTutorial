@@ -27,7 +27,7 @@
     <ClCompile Include="source\Model.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source\SwapChain.cpp">
+    <ClCompile Include="source\SwapChainData.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -47,7 +47,10 @@
     <ClInclude Include="headers\Vertex.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="headers\SwapChain.h">
+    <ClInclude Include="headers\Shader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="headers\SwapChainData.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

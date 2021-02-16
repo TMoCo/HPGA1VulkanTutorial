@@ -73,22 +73,13 @@ void DuckApplication::initVulkan() {
     // create the vulkan core 
     vkSetup.initSetup(window);
 
-    // create the swap chain
-    createSwapChain();
-    // initialise the swap chain image views
-    createImageViews();
-
-    createRenderPass();
+    // create the descriptor set layout before the swap chain
     createDescriptorSetLayout();
-    createGraphicsPipeline();
+
+    swapChainData.initSwapChainData(&vkSetup, &descriptorSetLayout);
 
     createCommandPool(&renderCommandPool, 0);
-    createDepthResources();
 
-
-    createFrameBuffers();
-
-    
     // textures can go in a separate class
     createTextureImage();
     createTextureImageView();
@@ -99,305 +90,16 @@ void DuckApplication::initVulkan() {
     createVertexBuffer();
     createIndexBuffer();
 
-    // uniforms as well?
-    createUniformBuffers();
-    createDescriptorPool(); 
-    createDescriptorSets();
-
     createCommandBuffers(&renderCommandBuffers, renderCommandPool);
 
     createSyncObjects();
 }
 
-//
-// Graphics pipeline setup
-//
-
-void DuckApplication::createGraphicsPipeline() {
-    // std::vector<char> 
-    auto vertShaderCode = readFile("C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\source\\shaders\\vert.spv");
-    auto fragShaderCode = readFile("C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\source\\shaders\\frag.spv");
-
-
-    // compiling and linking of shaders doesnt happen until the pipeline is created, they are also destroyed along
-    // with the pipeline so we don't need them to be member variables of the class
-    VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
-    VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
-
-    // need to assign shaders to stages in the pipeline
-    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
-    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    // for the vertex shader, we'll asign it to the vertex stage
-    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    // set the vertex shader
-    vertShaderStageInfo.module = vertShaderModule;
-    vertShaderStageInfo.pName = "main"; // the entry point, or the function to invoke in the shader
-    // vertShaderStageInfo.pSpecializationInfo : can specify values for shader constants. Can use a singleshader module 
-    // whose behaviour can be configured at pipeline creation by specifying different values for the constants used 
-    // better than at render time because compiler can optimise if statements dependent on these values. Watch this space
-
-    // similar gist as vertex shader for fragment shader
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
-    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT; // assign to the fragment stage
-    fragShaderStageInfo.module = fragShaderModule;
-    fragShaderStageInfo.pName = "main"; // also use main as the entry point
-
-    // use this array for future reference
-    VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
-
-    // setup pipeline to accept vertex data
-    auto bindingDescription = Vertex::getBindingDescription();
-    auto attributeDescriptions = Vertex::getAttributeDescriptions();
-
-    // format of the vertex data, describe the binding and the attributes
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
-    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    // because vertex data is in the shader, we don't have to specify anything here. We would otherwise
-    // need arrays of structs that describe the details for loading vertex data
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
-
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    // tells what kind of geometry to draw from the vertices
-    // VK_PRIMITIVE_TOPOLOGY_POINT_LIST: points from vertices
-    // VK_PRIMITIVE_TOPOLOGY_LINE_LIST : line from every 2 vertices without reuse
-    // VK_PRIMITIVE_TOPOLOGY_LINE_STRIP : end vertex of every line used as start vertex for next line
-    // VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST : triangle from every 3 vertices without reuse
-    // VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP : second and third vertex of every triangle used as first two vertices of next triangle
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    inputAssembly.primitiveRestartEnable = VK_FALSE; // can break up lines and triangles in strip using special id 0xFFF or 0xFFFFFFF
-
-    // the region of the framebuffer of output that will be rendered to ... usually always (0,0) to (width,height)
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = (float)swapChainExtent.width; // don't use WIDTH and HEIGHT as the swap chain may have differing values
-    viewport.height = (float)swapChainExtent.height;
-    viewport.minDepth = 0.0f; // in range [0,1]
-    viewport.maxDepth = 1.0f; // in range [0,1]
-
-    // viewport describes transform from image to framebuffer, but scissor rectangles defiles wich regions pixels are actually stored
-    // pixels outisde are ignored by the rasteriser. Here the scissor covers the entire framebuffer
-    VkRect2D scissor{};
-    scissor.offset = { 0, 0 };
-    scissor.extent = swapChainExtent;
-
-    // once viewport and scissor have been defined, they need to be combined. Can use multiple viewports and scissors on some GPUs
-    // (requires enqbling a GPU feature, so changes the logical device creation)
-    VkPipelineViewportStateCreateInfo viewportState{};
-    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
-    viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
-
-    // rateriser takes geometry and turns it into fragments. Also performs depth test, face culling and scissor test
-    // can be configured to output wireframe, full polygon 
-    VkPipelineRasterizationStateCreateInfo rasterizer{};
-    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.depthClampEnable = VK_FALSE; // if true,  fragments outside of near and far are clamped rather than discarded
-    rasterizer.rasterizerDiscardEnable = VK_FALSE; // if true, disables passing geometry to framebuffer, so disables output
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL; // like opengl, can also be VK_POLYGON_MODE_LINE (wireframe) or VK_POLYGON_MODE_POINT
-    // NB any other mode than fill requires enabling a GPU feature
-    rasterizer.lineWidth = 1.0f; // larger than 1.0f requires the wideLines GPU feature
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; // type of face culling to use (disable, cull front, cull back, cull both)
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // vertex order for faces to be front facing (CW and CCW)
-    rasterizer.depthBiasEnable = VK_FALSE; // alter the depth by adding a constant or based onthe fragment's slope
-    rasterizer.depthBiasConstantFactor = 0.0f; // Optional
-    rasterizer.depthBiasClamp = 0.0f; // Optional
-    rasterizer.depthBiasSlopeFactor = 0.0f; // Optional
-
-    // multisampling is a way to perform antialiasing, less expensive than rendering a high res poly then donwscaling
-    // also requires enabling a GPU feature (in logical device creation) so disable for now
-    VkPipelineMultisampleStateCreateInfo multisampling{};
-    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-    multisampling.minSampleShading = 1.0f; // Optional
-    multisampling.pSampleMask = nullptr; // Optional
-    multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
-    multisampling.alphaToOneEnable = VK_FALSE; // Optional
-
-    // could also set depth and stencil testing, but not needed now so it can stay a nullptr (already set
-    // thanks to the {} when creating the struct)
-
-    // after fragment shader has returned a result, needs to be combined with what is already in framebuffer
-    // can either mix old and new values or combine with bitwise operation
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{}; // contains the config per attached framebuffer
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE; // disable because we don't want colour blending
-
-    // this struct references array of structures for all framebuffers and sets constants to use as blend factors
-    VkPipelineColorBlendStateCreateInfo colorBlending{};
-    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.attachmentCount = 1; // the previously declared attachment
-    colorBlending.pAttachments = &colorBlendAttachment;
-
-    // enable and configure depth testing
-    VkPipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    // spec if the depth should be compared to the depth buffer
-    depthStencil.depthTestEnable = VK_TRUE;
-    // specifies if the new depth that pass the depth test should be written to the buffer
-    depthStencil.depthWriteEnable = VK_TRUE;
-    // pecifies the comparison that is performed to keep or discard fragments (here lower depth = closer so keep less)
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-    // boundary on the depth test, only keep fragments within the specified depth range
-    depthStencil.depthBoundsTestEnable = VK_FALSE;
-    depthStencil.minDepthBounds = 0.0f; // Optional
-    depthStencil.maxDepthBounds = 1.0f; // Optional
-    // stencil buffer operations
-    depthStencil.stencilTestEnable = VK_FALSE;
-    depthStencil.front = {}; // Optional
-    depthStencil.back = {}; // Optional
-
-
-    // create the pipeline layout, where uniforms are specified, also push constants another way of passing dynamic values
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    // refernece to the descriptor layout (uniforms)
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
-
-    if (vkCreatePipelineLayout(vkSetup.device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create pipeline layout!");
-    }
-
-    // now use all the structs we have constructed to build the pipeline
-    VkGraphicsPipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    // reference the array of shader stage structs
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shaderStages;
-
-    // reference the structures describing the fixed function pipeline
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.pDepthStencilState = &depthStencil;
-    // the pipeline layout is a vulkan handle rather than a struct pointer
-    pipelineInfo.layout = pipelineLayout;
-    // and a reference to the render pass
-    pipelineInfo.renderPass = renderPass;
-    pipelineInfo.subpass = 0; // index of desired sub pass where pipeline will be used
-
-    if (vkCreateGraphicsPipelines(vkSetup.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create graphics pipeline!");
-    }
-
-    // destroy the shader modules, as we don't need them once the shaders have been compiled
-    vkDestroyShaderModule(vkSetup.device, fragShaderModule, nullptr);
-    vkDestroyShaderModule(vkSetup.device, vertShaderModule, nullptr);
-}
-
-void DuckApplication::createRenderPass() {
-    // need to tell vulkan about framebuffer attachments used while rendering
-    // how many colour and depth buffers, how many samples for each and how contents
-    // handled though rendering operations... Wrapped in render pass object
-    VkAttachmentDescription colorAttachment{}; // attachment 
-    colorAttachment.format = swapChainImageFormat; // colour attachment format should match swap chain images format
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // > 1 for multisampling
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // what to do with data in attachment pre rendering
-    // VK_ATTACHMENT_LOAD_OP_LOAD: Preserve the existing contents of the attachment
-    // VK_ATTACHMENT_LOAD_OP_CLEAR : Clear the values to a constant at the start
-    // VK_ATTACHMENT_LOAD_OP_DONT_CARE : Existing contents are undefined; we don't care about them
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // post rendering
-    // VK_ATTACHMENT_STORE_OP_STORE: Rendered contents will be stored in memoryand can be read later
-    // VK_ATTACHMENT_STORE_OP_DONT_CARE : Contents of the framebuffer will be undefined after the rendering
-    // above ops for colour, below for stencil data... not currenyly in use so just ignore
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    // textures and framebuffers are VkImages with certain pixel formats, but layout in memory can change based on image use
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // layout before render pass begins (we don't care, not guaranteed to be preserved)
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // layout to transition to post render pass (image should be ready for drawing over by imgui)
-    // common layouts
-    // VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL: Images used as color attachment
-    // VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : Images to be presented in the swap chain
-    // VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : Images to be used as destination for a memory copy operation
-
-    // specify a depth attachment to the render pass
-    VkAttachmentDescription depthAttachment{};
-    depthAttachment.format = findDepthFormat(); // the same format as the depth image itself
-    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // like the colour buffer, we don't care about the previous depth contents so use layout undefined
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-
-    // a single render pass consists of multiple subpasses, which are subsequent rendering operations depending on content of
-    // framebuffers on previous passes (eg post processing). Grouping subpasses into a single render pass lets Vulkan optimise
-    // every subpass references 1 or more attachments (see above) with structs:
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0; // forst attachment so refer to attachment index 0
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // which layout we want the attachment to have during a subpass
-
-    VkAttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 1; // the second attachment
-    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    // the subpass
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; // be explicit that this is a graphics subpass (Vulkan supports compute subpasses)
-    // specify the reference to the colour attachment 
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef; // other types of attachments can also be referenced
-    subpass.pDepthStencilAttachment = &depthAttachmentRef; // only a single depth/stencil attachment, no sense in depth tests on multiple buffers
-
-
-    // subpass dependencies control the image layout transitions. They specify memory and execution of dependencies between subpasses
-    // there are implicit subpasses right before and after the render pass
-    // There are two built-in dependencies that take care of the transition at the start of the render pass and at the end, but the former 
-    // does not occur at the right time as it assumes that the transition occurs at the start of the pipeline, but we haven't acquired the image yet 
-    // there are two ways to deal with the problem:
-    // - change waitStages of the imageAvailableSemaphore (in the drawframe function) to VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT -> ensures that the
-    // render pass does not start until image is available
-    // - make the render pass wait for the VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT stage
-    VkSubpassDependency dependency{};
-    // indices of the dependency and dependent subpasses, dstSubpass > srcSubpass at all times to prevent cycles in dependency graph
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL; // special refers to implicit subpass before or after renderpass 
-    dependency.dstSubpass = 0; // index 0 refers to our subpass, first and only one
-    // specify the operations to wait on and stag when ops occur
-    // need to wait for swap chain to finish reading, can be accomplished by waiting on the colour attachment output stage
-    // need to make sure there are no conflicts between transitionning og the depth image and it being cleared as part of its load operation
-    // The depth image is first accessed in the early fragment test pipeline stage and because we have a load operation that clears, we should specify the access mask for writes.
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.srcAccessMask = 0;
-    // ops that should wait are in colour attachment stage and involve writing of the colour attachment
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-    // now create the render pass, can be created by filling the structure with references to arrays for multiple subpasses, attachments and dependencies
-    std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment }; // store the attachments
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    renderPassInfo.pAttachments = attachments.data(); // the colour attachment for the renderpass
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass; // the associated supass
-    // specify the dependency
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &dependency;
-
-    // explicitly create the renderpass
-    if (vkCreateRenderPass(vkSetup.device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create render pass!");
-    }
-}
 
 void DuckApplication::createImGuiRenderPass() {
     // creat the ImGui render pass
     VkAttachmentDescription attachment = {};
-    attachment.format = swapChainImageFormat;
+    attachment.format = swapChainData.imageFormat;
     attachment.samples = VK_SAMPLE_COUNT_1_BIT;
     attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -437,52 +139,6 @@ void DuckApplication::createImGuiRenderPass() {
     }
 }
 
-void DuckApplication::createDepthResources() {
-    // depth image should have the same resolution as the colour attachment, defined by swap chain extent
-    VkFormat depthFormat = findDepthFormat(); // find a depth format
-
-    // we have the information needed to create an image (the format, usage etc) and an image view
-    createImage(swapChainExtent.width, swapChainExtent.height, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage, depthImageMemory);
-    depthImageView = createImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
-
-    // undefined layout is used as the initial layout as there are no existing depth image contents that matter
-    transitionImageLayout(depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-}
-
-VkFormat DuckApplication::findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
-    // instead of a fixed format, get a list of formats ranked from most to least desirable and iterate through it
-    for (VkFormat format : candidates) {
-        // query the support of the format by the device
-        VkFormatProperties props; // contains three fields
-        // linearTilingFeatures: Use cases that are supported with linear tiling
-        // optimalTilingFeatures: Use cases that are supported with optimal tiling
-        // bufferFeatures : Use cases that are supported for buffer
-        vkGetPhysicalDeviceFormatProperties(vkSetup.physicalDevice, format, &props);
-
-        // test if the format is supported
-        if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
-            return format;
-        }
-        else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) {
-            return format;
-        }
-    }
-    // could either return a special value or throw an exception
-    throw std::runtime_error("failed to find supported format!");
-}
-
-VkFormat DuckApplication::findDepthFormat() {
-    // return a certain depth format if available
-    return findSupportedFormat(
-        // list of candidate formats
-        { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
-        // the desired tiling
-        VK_IMAGE_TILING_OPTIMAL,
-        // the device format properties flag that we want 
-        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
-    );
-}
 
 bool DuckApplication::hasStencilComponent(VkFormat format) {
     // simple helper function that returns true if the specified format has a stencil buffer component
@@ -532,16 +188,16 @@ void DuckApplication::createDescriptorPool() {
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     // we will allocate one pool for each frame
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; // the uniform buffer descriptor
-    poolSizes[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+    poolSizes[0].descriptorCount = static_cast<uint32_t>(swapChainData.images.size());
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; // the sampler descriptor
-    poolSizes[1].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+    poolSizes[1].descriptorCount = static_cast<uint32_t>(swapChainData.images.size());
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size()); // max nb of individual descriptors 
     poolInfo.pPoolSizes = poolSizes.data(); // the descriptors
     // the maximum number of descriptor sets that may be allocated
-    poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
+    poolInfo.maxSets = static_cast<uint32_t>(swapChainData.images.size());
 
     // create the descirptor pool
     if (vkCreateDescriptorPool(vkSetup.device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
@@ -553,7 +209,7 @@ void DuckApplication::createImGuiDescriptorPool() {
 
     // for ImGui
     std::array<VkDescriptorPoolSize, 11> poolSizes{};
-    uint32_t swapChainImagesSize = static_cast<uint32_t>(swapChainImages.size());
+    uint32_t swapChainImagesSize = static_cast<uint32_t>(swapChainData.images.size());
     poolSizes[0] = { VK_DESCRIPTOR_TYPE_SAMPLER, swapChainImagesSize };
     poolSizes[1] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, swapChainImagesSize };
     poolSizes[2] = { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, swapChainImagesSize };
@@ -571,7 +227,7 @@ void DuckApplication::createImGuiDescriptorPool() {
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size()); // max nb of individual descriptors 
     poolInfo.pPoolSizes = poolSizes.data(); // the descriptors
     // the maximum number of descriptor sets that may be allocated
-    poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
+    poolInfo.maxSets = static_cast<uint32_t>(swapChainData.images.size());
 
     // create the descirptor pool
     if (vkCreateDescriptorPool(vkSetup.device, &poolInfo, nullptr, &imGuiDescriptorPool) != VK_SUCCESS) {
@@ -581,18 +237,18 @@ void DuckApplication::createImGuiDescriptorPool() {
 
 void DuckApplication::createDescriptorSets() {
     // create the descriptor set
-    std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
+    std::vector<VkDescriptorSetLayout> layouts(swapChainData.images.size(), descriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     // specify the descriptor pool to allocate from
     allocInfo.descriptorPool = descriptorPool;
     // the number of descriptors to allocate
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainData.images.size());
     // a pointer to the descriptor layout to base them on
     allocInfo.pSetLayouts = layouts.data();
 
     // resize the descriptor set container to accomodate for the descriptor sets, as many as there are frames
-    descriptorSets.resize(swapChainImages.size());
+    descriptorSets.resize(swapChainData.images.size());
 
     // now attempt to create them. We don't need to explicitly clear the descriptor sets because they will be freed
     // when the desciptor set is destroyed. The function may fail if the pool is not sufieciently large, but succeed other times 
@@ -603,7 +259,7 @@ void DuckApplication::createDescriptorSets() {
     }
 
     // loop over the created descriptor sets to configure them
-    for (size_t i = 0; i < swapChainImages.size(); i++) {
+    for (size_t i = 0; i < swapChainData.images.size(); i++) {
         // the buffer and the region of it that contain the data for the descriptor
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = uniformBuffers[i]; // contents of buffer for image i
@@ -654,11 +310,11 @@ void DuckApplication::createUniformBuffers() {
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
     // resize the uniform buffer to be as big as the swap chain, each image has its own se of uniforms
-    uniformBuffers.resize(swapChainImages.size());
-    uniformBuffersMemory.resize(swapChainImages.size());
+    uniformBuffers.resize(swapChainData.images.size());
+    uniformBuffersMemory.resize(swapChainData.images.size());
 
     // loop over the images and create a uniform buffer for each
-    for (size_t i = 0; i < swapChainImages.size(); i++) {
+    for (size_t i = 0; i < swapChainData.images.size(); i++) {
         createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
     }
 }
@@ -730,7 +386,7 @@ void DuckApplication::createCommandPool(VkCommandPool* commandPool, VkCommandPoo
 
 void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* commandBuffers, VkCommandPool& commandPool) {
     // resize the command buffers container to the same size as the frame buffers container
-    commandBuffers->resize(swapChainFramebuffers.size());
+    commandBuffers->resize(swapChainData.framebuffers.size());
 
     // create the struct
     VkCommandBufferAllocateInfo allocInfo{};
@@ -765,11 +421,11 @@ void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* command
         // create a render pass, initialised with some params in the following struct
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassInfo.renderPass = renderPass; // handle to the render pass and the attachments to bind
-        renderPassInfo.framebuffer = swapChainFramebuffers[i]; // the framebuffer created for each swapchain image view
+        renderPassInfo.renderPass = swapChainData.renderPass; // handle to the render pass and the attachments to bind
+        renderPassInfo.framebuffer = swapChainData.framebuffers[i]; // the framebuffer created for each swapchain image view
         renderPassInfo.renderArea.offset = { 0, 0 }; // some offset for the render area
         // best performance if same size as attachment
-        renderPassInfo.renderArea.extent = swapChainExtent; // size of the render area (where shaders load and stores occur, pixels outside are undefined)
+        renderPassInfo.renderArea.extent = swapChainData.extent; // size of the render area (where shaders load and stores occur, pixels outside are undefined)
 
         // because we used the VK_ATTACHMENT_LOAD_OP_CLEAR for load operations of the render pass, we need to set clear colours
         std::array<VkClearValue, 2> clearValues{};
@@ -786,7 +442,7 @@ void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* command
         // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS -> render pass commands executed from secondary command buffers
 
             // bind the graphics pipeline, second param determines if the object is a graphics or compute pipeline
-        vkCmdBindPipeline((*commandBuffers)[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+        vkCmdBindPipeline((*commandBuffers)[i], VK_PIPELINE_BIND_POINT_GRAPHICS, swapChainData.graphicsPipeline);
 
         VkBuffer vertexBuffers[] = { vertexBuffer };
         VkDeviceSize offsets[] = { 0 };
@@ -796,7 +452,7 @@ void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* command
         // params (-the nescessary cmd) bufferindex buffer, byte offset into it, type of data
         vkCmdBindIndexBuffer((*commandBuffers)[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         // bind the uniform descriptor sets
-        vkCmdBindDescriptorSets((*commandBuffers)[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], 0, nullptr);
+        vkCmdBindDescriptorSets((*commandBuffers)[i], VK_PIPELINE_BIND_POINT_GRAPHICS, swapChainData.graphicsPipelineLayout, 0, 1, &descriptorSets[i], 0, nullptr);
 
         // command to draw the vertices in the vertex buffer
         //vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0); 
@@ -873,101 +529,6 @@ void DuckApplication::endSingleTimeCommands(VkCommandBuffer* commandBuffer, VkCo
     vkFreeCommandBuffers(vkSetup.device, *commandPool, 1, commandBuffer);
 }
 
-void DuckApplication::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout) {
-    // images may have different layout that affect how pixels are organised in memory, so we need to specify which layout we are transitioning
-    // to and from to lake sure we have the optimal layout for our task
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands(renderCommandPool);
-    // a common way to perform layout transitions is using an image memory barrier, generally for suncing acces to a ressourcem
-    // eg make sure write completes before subsequent read, but can transition image layout and transfer queue family ownership
-
-    // the barrier struct, useful for synchronising access resources in the pipeline (no read / write conflicts)
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    // specify layout transition
-    barrier.oldLayout = oldLayout; // can use VK_IMAGE_LAYOUT_UNDEFINED if old layout is of no importance
-    barrier.newLayout = newLayout;
-    // indices of the two queue families
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; // explicit if we don't want to as not default value
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    // info about the image
-    barrier.image = image; // the image
-
-    // Determine which aspects of the image are included in the view!
-    if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-        // in the case the image is a depth image, then we want the view to contain only the depth aspect
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        if (hasStencilComponent(format)) {
-            // also need to include the stencil aspect if avaialble
-            barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-        }
-    }
-    else {
-        // otherwise we are interested in the colour aspect of the image
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    }
-
-    // not an array and no mipmap 
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-
-    // we need to set the access mask and pipeline stages based on the layout in the transition
-    // we need to handle two transitions: 
-    // undefined -> transfer dest : transfer writes that don't need to wait on anything
-    // transfer dest -> shader reading : share read should wait on transfer write
-
-    // declare the stages 
-    VkPipelineStageFlags sourceStage;
-    VkPipelineStageFlags destinationStage;
-
-    
-
-    // determine which of the two transitions we are executing
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-        // first transition, where the layout is not important, to a layout optimal as destination in a transfer operation
-        barrier.srcAccessMask = 0; // don't have to wait on anything for pre barrier operation
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT; // transfer writes must occur in the pipeline transfer stage, a pseudo-stage where transfers happen
-    }
-    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-        // second transition, where the src layout is optimal as the destination of a transfer operation, to a layout optimal for sampling by a shader
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; // wait on the transfer to finish writing
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT; 
-
-        sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    } 
-    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-        // third transition, where the src layout is not important and the dst layout is optimal for depth/stencil operations
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    }
-    // extend this function for other transitions
-    else {
-        // unrecognised transition
-        throw std::invalid_argument("unsupported layout transition!");
-    }
-
-
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        sourceStage, destinationStage,
-        0,
-        // arrays of pipeline barriers of three available types
-        0, nullptr, // memory barriers
-        0, nullptr, // buffer memory barriers
-        1, &barrier // image memory barriers
-    );
-
-    endSingleTimeCommands(&commandBuffer, &renderCommandPool);
-}
-
 void DuckApplication::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
     // copying buffer to image
     VkCommandBuffer commandBuffer = beginSingleTimeCommands(renderCommandPool);
@@ -1006,34 +567,6 @@ void DuckApplication::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t
     endSingleTimeCommands(&commandBuffer, &renderCommandPool);
 }
 
-void DuckApplication::createFrameBuffers() {
-    // resize the container to hold all the framebuffers, or image views, in the swap chain
-    swapChainFramebuffers.resize(swapChainImageViews.size());
-
-    // now loop over the image views and create the framebuffers, also bind the image to the attachment
-    for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-        // get the attachment 
-        std::array<VkImageView, 2> attachments = {
-            swapChainImageViews[i],
-            depthImageView
-        };
-
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = renderPass; // which renderpass the framebuffer needs, only one at the moment
-        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size()); // the number of attachments, or VkImageView objects, to bind to the buffer
-        framebufferInfo.pAttachments = attachments.data(); // pointer to the attachment(s)
-        framebufferInfo.width = swapChainExtent.width; // specify dimensions of framebuffer depending on swapchain dimensions
-        framebufferInfo.height = swapChainExtent.height;
-        framebufferInfo.layers = 1; // single images so only one layer
-
-        // attempt to create the framebuffer and place in the framebuffer container
-        if (vkCreateFramebuffer(vkSetup.device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create framebuffer!");
-        }
-    }
-}
-
 void DuckApplication::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, 
     VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
     // fill in the corresponding struct
@@ -1057,7 +590,7 @@ void DuckApplication::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, 
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+    allocInfo.memoryTypeIndex = utils::findMemoryType(&vkSetup.physicalDevice, memRequirements.memoryTypeBits, properties);
 
     // allocate memory for the buffer. In a real world application, not supposed to actually call vkAllocateMemory for every individual buffer. 
     // The maximum number of simultaneous memory allocations is limited by the maxMemoryAllocationCount physical device limit. The right way to 
@@ -1085,25 +618,6 @@ void DuckApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDevic
     vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
     endSingleTimeCommands(&commandBuffer, &renderCommandPool);
-}
-
-uint32_t DuckApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
-    // GPUs allocate dufferent types of memory, varying in terms of allowed operations and performance. Combine buffer and application
-    // requirements to find best type of memory
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(vkSetup.physicalDevice, &memProperties);
-    // two arrays in the struct, memoryTypes and memoryHeaps. Heaps are distinct ressources like VRAM and swap space in RAM
-    // types exist within these heaps
-
-    // loop over the device memory types to find the right one
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-        // we want a memory type that is suitable for the vertex buffer, but also able to write our vertex data to memory
-        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
-        }
-    }
-    // otherwise we can't find the right type!
-    throw std::runtime_error("failed to find suitable memory type!");
 }
 
 //
@@ -1288,7 +802,7 @@ void DuckApplication::createImage(uint32_t width, uint32_t height, VkFormat form
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    allocInfo.memoryTypeIndex = utils::findMemoryType(&vkSetup.physicalDevice, memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     // attempt to create an image
     if (vkAllocateMemory(vkSetup.device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
@@ -1338,173 +852,6 @@ VkImageView DuckApplication::createImageView(VkImage image, VkFormat format, VkI
 // Swap chain and surface setup
 //
 
-SwapChainSupportDetails DuckApplication::querySwapChainSupport(VkPhysicalDevice device) {
-    SwapChainSupportDetails details;
-    // query the surface capabilities and store in a VkSurfaceCapabilities struct
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, vkSetup.surface, &details.capabilities); // takes into account device and surface when determining capabilities
-
-    // same as we have seen many times before
-    uint32_t formatCount;
-    // query the available formats, pass null ptr to just set the count
-    vkGetPhysicalDeviceSurfaceFormatsKHR(device, vkSetup.surface, &formatCount, nullptr);
-
-    // if there are formats
-    if (formatCount != 0) {
-        // then resize the vector accordingly
-        details.formats.resize(formatCount);
-        // and set details struct fromats vector with the data pointer
-        vkGetPhysicalDeviceSurfaceFormatsKHR(device, vkSetup.surface, &formatCount, details.formats.data());
-    }
-
-    // exact same thing as format for presentation modes
-    uint32_t presentModeCount;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(device, vkSetup.surface, &presentModeCount, nullptr);
-
-    if (presentModeCount != 0) {
-        details.presentModes.resize(presentModeCount);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(device, vkSetup.surface, &presentModeCount, details.presentModes.data());
-    }
-
-    return details;
-}
-
-// next three functions are for setting the parameters of the swap chain
-
-VkSurfaceFormatKHR DuckApplication::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
-    // VkSurfaceFormatKHR entry contains a format and colorSpace member
-    // format is colour channels and type eg VK_FORMAT_B8G8R8A8_SRGB (8 bit uint BGRA channels, 32 bits per pixel)
-    // colorSpace is the coulour space that indicates if SRGB is supported with VK_COLOR_SPACE_SRGB_NONLINEAR_KHR (used to be VK_COLORSPACE_SRGB_NONLINEAR_KHR)
-
-    // loop through available formats
-    for (const auto& availableFormat : availableFormats) {
-        // if the correct combination of desired format and colour space exists then return the format
-        if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-            return availableFormat;
-        }
-    }
-
-    // if above fails, we could rank available formats based on how "good" they are for our task, settle for first element for now 
-    return availableFormats[0];
-}
-
-VkPresentModeKHR DuckApplication::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
-    // presentation mode, can be one of four possible values:
-    // VK_PRESENT_MODE_IMMEDIATE_KHR -> image submitted by app is sent straight to screen, may result in tearing
-    // VK_PRESENT_MODE_FIFO_KHR -> swap chain is a queue where display takes an image from front when display is refreshed. Program inserts rendered images at back. 
-    // If queue full, program has to wait. Most similar vsync. Moment display is refreshed is "vertical blank".
-    // VK_PRESENT_MODE_FIFO_RELAXED_KHR -> Mode only differs from previous if application is late and queue empty at last vertical blank. Instead of waiting for next vertical blank, 
-    // image is transferred right away when it finally arrives, may result tearing.
-    // VK_PRESENT_MODE_MAILBOX_KHR -> another variation of second mode. Instead of blocking the app when queue is full, images that are already queued are replaced with newer ones.
-    // Can be used to implement triple buffering, which allows to avoid tearing with less latency issues than standard vsync using double buffering.
-
-    for (const auto& availablePresentMode : availablePresentModes) {
-        // use triple buffering if available
-        if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
-            return availablePresentMode;
-        }
-    }
-
-    return VK_PRESENT_MODE_FIFO_KHR;
-}
-
-VkExtent2D DuckApplication::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
-    // swap extent is the resolution of the swap chain images, almost alwawys = to window res we're drawing pixels in
-    // match resolution by setting width and height in currentExtent member of VkSurfaceCapabilitiesKHR struct.
-    if (capabilities.currentExtent.width != UINT32_MAX) {
-        return capabilities.currentExtent;
-    }
-    else {
-        // get the dimensions of the window
-        int width, height;
-        glfwGetFramebufferSize(window, &width, &height);
-
-        // prepare the struct with the height and width of the window
-        VkExtent2D actualExtent = {
-            static_cast<uint32_t>(width),
-            static_cast<uint32_t>(height)
-        };
-
-        // clamp the values between allowed min and max extents by the surface
-        actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
-        actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
-
-        return actualExtent;
-    }
-}
-
-void DuckApplication::createSwapChain() {
-    // create the swap chain by checking for swap chain support
-    SwapChainSupportDetails swapChainSupport = querySwapChainSupport(vkSetup.physicalDevice);
-
-    // set the swap chain properties using the above three methods for the format, presentation mode and capabilities
-    VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
-    VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
-    VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
-
-    // the number of images we want to put in the swap chain, at least one more image than minimum so we don't have to wait for 
-    // driver to complete internal operations before acquiring another image
-    uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
-
-    // also make sure not to exceed the maximum image count
-    if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) {
-        imageCount = swapChainSupport.capabilities.maxImageCount;
-    }
-
-    // start creating a structure for the swap chain
-    VkSwapchainCreateInfoKHR createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.surface = vkSetup.surface; // specify the surface the swap chain should be tied to
-    // set details
-    createInfo.minImageCount = imageCount;
-    createInfo.imageFormat = surfaceFormat.format;
-    createInfo.imageColorSpace = surfaceFormat.colorSpace;
-    createInfo.imageExtent = extent;
-    createInfo.imageArrayLayers = 1; // amount of layers each image consists of
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // bit field, specifies types of operations we'll use images in swap chain for
-
-    // how to handle the swap chain images across multiple queue families (in case graphics queue is different to presentation queue)
-    QueueFamilyIndices indices = QueueFamilyIndices::findQueueFamilies(vkSetup.physicalDevice, vkSetup.surface);
-    uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
-
-    // if the queues differ
-    if (indices.graphicsFamily != indices.presentFamily) {
-        createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT; // image owned by one queue family, ownership must be transferred explicilty
-        createInfo.queueFamilyIndexCount = 2;
-        createInfo.pQueueFamilyIndices = queueFamilyIndices;
-    }
-    else {
-        createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; // images can be used accross queue families with no explicit transfer
-        createInfo.queueFamilyIndexCount = 0; // Optional
-        createInfo.pQueueFamilyIndices = nullptr; // Optional
-    }
-
-    // a certain transform to apply to the image
-    createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
-    // specifiy if alpha channel should be blending with other windows
-    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    createInfo.presentMode = presentMode; // determined earlier
-    createInfo.clipped = VK_TRUE; // ignore colour of obscured pixels
-    // in case the swap chain is no longer optimal or invalid (if window was resized), need to recreate swap chain from scratch
-    // and specify reference to old swap chain (ignore for now)
-    createInfo.oldSwapchain = VK_NULL_HANDLE;
-
-    // finally create the swap chain
-    if (vkCreateSwapchainKHR(vkSetup.device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create swap chain!");
-    }
-
-    // get size of swap chain images
-    vkGetSwapchainImagesKHR(vkSetup.device, swapChain, &imageCount, nullptr);
-    // resize accordingly
-    swapChainImages.resize(imageCount);
-    // pull the images
-    vkGetSwapchainImagesKHR(vkSetup.device, swapChain, &imageCount, swapChainImages.data());
-
-    // save format and extent
-    swapChainImageFormat = surfaceFormat.format;
-    swapChainExtent = extent;
-}
-
 void DuckApplication::recreateSwapChain() {
     // for handling window minimisation, we get the size of the windo through the glfw framebuffer dimensions
     int width = 0, height = 0;
@@ -1520,74 +867,20 @@ void DuckApplication::recreateSwapChain() {
     // wait before touching if in use by the device
     vkDeviceWaitIdle(vkSetup.device);
 
+    createDescriptorSets();
     // destroy the previous swap chain
-    cleanupSwapChain();
+    swapChainData.cleanupSwapChainData();
 
-    // all creation functions for objects that depend on swap chain / window size
-    createSwapChain(); // recreate the swap chain itself
-    createImageViews(); // because views are based on swap chain images, they need to be recreated as well
-    createRenderPass(); // render pass needs to be recreated because it depends on format of swap chain images
-    // rare for swapchain image format to change but needs handling, viewport and scissors specified in pipeline 
-    // creation so needs to be recreated. NB we can avoid this using dynamic states
-    createGraphicsPipeline();
-    createDepthResources();
-    createFrameBuffers(); // directly depend on swap chain images so recreate
+    // recreate it
+    swapChainData.initSwapChainData(&vkSetup, &descriptorSetLayout);
+
     createUniformBuffers(); // depends on swap chain size so recreate
     createDescriptorPool();
     //createImGuiDescriptorPool();
-    createDescriptorSets();
     createCommandBuffers(&renderCommandBuffers, renderCommandPool); // directly depend on swap chain images so recreate
 
     // tell ImGui to update the swap chain information
     //ImGui_ImplVulkan_SetMinImageCount(static_cast<uint32_t>(swapChainImages.size()));
-}
-
-void DuckApplication::cleanupSwapChain() {
-    // destroy the depth image and related stuff (view and free memory)
-    vkDestroyImageView(vkSetup.device, depthImageView, nullptr);
-    vkDestroyImage(vkSetup.device, depthImage, nullptr);
-    vkFreeMemory(vkSetup.device, depthImageMemory, nullptr);
-
-    // destroy the frame buffers
-    for (size_t i = 0; i < swapChainFramebuffers.size(); i++) {
-        vkDestroyFramebuffer(vkSetup.device, swapChainFramebuffers[i], nullptr);
-    }
-
-    // destroy the command buffers. This lets us preserve the command pool rather than wastefully creating and deestroying repeatedly
-    vkFreeCommandBuffers(vkSetup.device, renderCommandPool, static_cast<uint32_t>(renderCommandBuffers.size()), renderCommandBuffers.data());
-
-    // destroy pipeline and related data
-    vkDestroyPipeline(vkSetup.device, graphicsPipeline, nullptr);
-    vkDestroyPipelineLayout(vkSetup.device, pipelineLayout, nullptr);
-    vkDestroyRenderPass(vkSetup.device, renderPass, nullptr);
-
-    // loop over the image views and destroy them. NB we don't destroy the images because they are implicilty created
-    // and destroyed by the swap chain
-    for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-        vkDestroyImageView(vkSetup.device, swapChainImageViews[i], nullptr);
-    }
-
-    // destroy the swap chain proper
-    vkDestroySwapchainKHR(vkSetup.device, swapChain, nullptr);
-
-    // also destroy the uniform buffers that worked with the swap chain
-    for (size_t i = 0; i < swapChainImages.size(); i++) {
-        vkDestroyBuffer(vkSetup.device, uniformBuffers[i], nullptr);
-        vkFreeMemory(vkSetup.device, uniformBuffersMemory[i], nullptr);
-    }
-
-    // cleanup the descriptor pools
-    //vkDestroyDescriptorPool(vkSetup.device, imGuiDescriptorPool, nullptr);
-    vkDestroyDescriptorPool(vkSetup.device, descriptorPool, nullptr);
-}
-
-void DuckApplication::createImageViews() {
-    // resize the vector of views to accomodate the images
-    swapChainImageViews.resize(swapChainImages.size());
-    // loop to iterate through images and create a view for each
-    for (size_t i = 0; i < swapChainImages.size(); i++) {
-        swapChainImageViews[i] = createImageView(swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
-    }
 }
 
 //
@@ -1599,7 +892,7 @@ void DuckApplication::createSyncObjects() {
     imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
     renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
     inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-    imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE); // explicitly initialise the fences in this vector to no fence
+    imagesInFlight.resize(swapChainData.images.size(), VK_NULL_HANDLE); // explicitly initialise the fences in this vector to no fence
 
     VkSemaphoreCreateInfo semaphoreInfo{};
     // only required field at the moment, may change in the future
@@ -1664,7 +957,7 @@ void DuckApplication::drawFrame() {
     // retrieve an image from the swap chain
     uint32_t imageIndex;
     // swap chain is an extension so use the vk*KHR function
-    VkResult result = vkAcquireNextImageKHR(vkSetup.device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex); // params:
+    VkResult result = vkAcquireNextImageKHR(vkSetup.device, swapChainData.swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex); // params:
     // the logical device and the swap chain we want to restrieve image from
     // a timeout in ns. Using UINT64_MAX disables it
     // synchronisation objects, so a semaphore
@@ -1727,7 +1020,7 @@ void DuckApplication::drawFrame() {
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = signalSemaphores;
     // specify the swap chains to present image to and index of image for each swap chain
-    VkSwapchainKHR swapChains[] = { swapChain };
+    VkSwapchainKHR swapChains[] = { swapChainData.swapChain };
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = swapChains;
     presentInfo.pImageIndices = &imageIndex;
@@ -1765,7 +1058,7 @@ void DuckApplication::updateUniformBuffer(uint32_t currentImage) {
     // make the camera view the geometry from above at a 45° angle (eye pos, subject pos, up direction)
     ubo.view = glm::mat4(1.0f); //glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     // proect the scene with a 45° fov, use current swap chain extent to compute aspect ratio, near, far
-    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 100.0f);
+    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainData.extent.width / (float)swapChainData.extent.height, 0.1f, 100.0f);
     // designed for openGL, so y coordinates are inverted
     ubo.proj[1][1] *= -1;
 
@@ -1777,60 +1070,13 @@ void DuckApplication::updateUniformBuffer(uint32_t currentImage) {
 }
 
 //
-// Shaders
-//
-
-std::vector<char> DuckApplication::readFile(const std::string& filename) {
-    // create an input file stream, place cursor at the end and read in binary
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
-
-    // check that the stream was succesfully opened
-    if (!file.is_open()) {
-        throw std::runtime_error("failed to open file!");
-    }
-
-    // reading in the file at the end, we can use read position to determine how big the file is
-    // and allocate a buffer accordingly. tellg returns position of current character (ate)
-    size_t fileSize = (size_t)file.tellg();
-    // now allocate the buffer to accomodate for the file size and the data (bytes)
-    std::vector<char> buffer(fileSize);
-    // place cursor back at the begining of the file
-    file.seekg(0);
-    // then read the data, pointer to vector data and fileSIze informs where to place data and how much to read
-    file.read(buffer.data(), fileSize);
-    // good practice, always close the file!
-    file.close();
-    // and return the file in the buffer (bytes)
-    return buffer;
-}
-
-VkShaderModule DuckApplication::createShaderModule(const std::vector<char>& code) {
-    // need to wrap the shader code into a shader module through this helper function, takes 
-    // pointer to the byte code as argument
-    VkShaderModuleCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    createInfo.codeSize = code.size();
-    // the pointer to the bytecode needs to be a unit32_t, but it is currently a char. The reinterpret cast
-    // needs the data to satisfy the alignment of the uint32_t... But apparently the vector guarantees that
-    createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
-
-    VkShaderModule shaderModule;
-    // create the shader module 
-    if (vkCreateShaderModule(vkSetup.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create shader module!");
-    }
-
-    return shaderModule;
-}
-
-//
 // Cleanup
 //
 
 void DuckApplication::cleanup() {
 
     // call the function we created for destroying the swap chain
-    cleanupSwapChain();
+    swapChainData.cleanupSwapChainData();
 
     // destroy the texture image view and sampler
     vkDestroySampler(vkSetup.device, textureSampler, nullptr);

@@ -67,12 +67,12 @@ void VulkanSetup::createInstance() {
     // create a 0 initialised (curly braces) VkApplicationInfo, technically optional
     VkApplicationInfo appInfo{};
     // tells the driver how to optimise for our purpose
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO; // what kind of vulkan struct this appinfo belongs to
-    appInfo.pApplicationName = APP_NAME.data(); // name of the application
+    appInfo.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO; // what kind of vulkan struct this appinfo belongs to
+    appInfo.pApplicationName   = APP_NAME.data(); // name of the application
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0); // app version 1.0.0
-    appInfo.pEngineName = ENGINE_NAME.data(); // no engine used
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0); // no engine version 1.0.0
-    appInfo.apiVersion = VK_API_VERSION_1_0; // version of API used
+    appInfo.pEngineName        = ENGINE_NAME.data(); // no engine used
+    appInfo.engineVersion      = VK_MAKE_VERSION(1, 0, 0); // no engine version 1.0.0
+    appInfo.apiVersion         = VK_API_VERSION_1_0; // version of API used
     // pNext initialised to nullptr
 
     // create a VkInstanceCreateInfo struct, not optional!
@@ -207,14 +207,14 @@ void VulkanSetup::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateIn
     // the creation of a messenger create info is put in a separate function for use to debug the creation and destruction of 
     // a VkInstance object
     createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    createInfo.sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
     // types of callbacks to be called for
     createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     if (enableVerboseValidation) {
         createInfo.messageSeverity |= VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
     }
     // filter which message type filtered by callback
-    createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    createInfo.messageType     = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     // pointer to call back function
     createInfo.pfnUserCallback = debugCallback;
 }
@@ -397,14 +397,10 @@ void VulkanSetup::createLogicalDevice() {
     for (uint32_t queueFamily : uniqueQueueFamilies) {
         // specify which queue we want to create, initialise struct at 0
         VkDeviceQueueCreateInfo queueCreateInfo{};
-        // information in the struct
-        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        // the family index
-        queueCreateInfo.queueFamilyIndex = queueFamily;
-        // number of queues
-        queueCreateInfo.queueCount = 1;
-        // between 0 and 1, influences sheduling of queue commands 
-        queueCreateInfo.pQueuePriorities = &queuePriority;
+        queueCreateInfo.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO; // information in the struct
+        queueCreateInfo.queueFamilyIndex = queueFamily; // the family index
+        queueCreateInfo.queueCount       = 1; // number of queues
+        queueCreateInfo.pQueuePriorities = &queuePriority; // between 0 and 1, influences sheduling of queue commands 
         // push the info on the vector
         queueCreateInfos.push_back(queueCreateInfo);
     }
@@ -415,23 +411,19 @@ void VulkanSetup::createLogicalDevice() {
 
     // the struct containing the device info
     VkDeviceCreateInfo createInfo{};
-    // inform on type of struct
-    createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    // the number of queues
-    createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
-    // pointer to queue(s) info, here the raw underlying array in a vector (guaranteed contiguous!)
-    createInfo.pQueueCreateInfos = queueCreateInfos.data();
+    createInfo.sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO; // inform on type of struct
+    createInfo.queueCreateInfoCount    = static_cast<uint32_t>(queueCreateInfos.size()); // the number of queues
+    createInfo.pQueueCreateInfos       = queueCreateInfos.data(); // pointer to queue(s) info, here the raw underlying array in a vector (guaranteed contiguous!)
 
-    // desired device features
-    createInfo.pEnabledFeatures = &deviceFeatures;
+    createInfo.pEnabledFeatures        = &deviceFeatures; // desired device features
     // setting validation layers and extensions is per device
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()); // the number of desired extensions
+    createInfo.enabledExtensionCount   = static_cast<uint32_t>(deviceExtensions.size()); // the number of desired extensions
     createInfo.ppEnabledExtensionNames = deviceExtensions.data(); // pointer to the vector containing the desired extensions 
 
     // older implementation compatibility, no disitinction instance and device specific validations
     if (enableValidationLayers) {
         // these fields are ignored by newer vulkan implementations
-        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+        createInfo.enabledLayerCount   = static_cast<uint32_t>(validationLayers.size());
         createInfo.ppEnabledLayerNames = validationLayers.data();
     }
     else {

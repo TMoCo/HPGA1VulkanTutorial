@@ -5,9 +5,9 @@
 #ifndef DUCK_APPLICATION_H
 #define DUCK_APPLICATION_H
 
-// include the vulkan window data
-#include "../headers/VulkanSetup.h"
-#include "../headers/Vertex.h"
+#include "../headers/VulkanSetup.h" // include the vulkan setup class
+#include "../headers/Vertex.h" // the vertex struct
+#include "../headers/SwapChainData.h" // the swap chain class
 
 // glfw window library
 #define GLFW_INCLUDE_VULKAN
@@ -57,19 +57,8 @@ private:
 
     //--------------------------------------------------------------------//
 
-    // the graphics pipeline, vulkan does not allow us to modify the pipeline so we need to create one 
-    // from scratch if we want to add/remove stages, etc...
-    void createGraphicsPipeline();
-
-    void createRenderPass();
 
     void createImGuiRenderPass();
-
-    void createDepthResources();
-
-    VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
-
-    VkFormat findDepthFormat();
 
     bool hasStencilComponent(VkFormat format);
 
@@ -101,14 +90,10 @@ private:
 
     void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
-    void createFrameBuffers();
-
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, 
         VkBuffer& buffer, VkDeviceMemory& bufferMemory);
 
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
-
-    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     //--------------------------------------------------------------------//
     
@@ -132,21 +117,7 @@ private:
 
     //--------------------------------------------------------------------//
 
-    SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
-
-    VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
-
-    VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
-
-    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
-
-    void createSwapChain();
-
     void recreateSwapChain();
-
-    void cleanupSwapChain();
-
-    void createImageViews();
 
     //--------------------------------------------------------------------//
 
@@ -164,12 +135,6 @@ private:
     void presentImGuiFrame();
 
     void updateUniformBuffer(uint32_t currentImage);
-
-    //--------------------------------------------------------------------//
-
-    static std::vector<char> readFile(const std::string& filename);
-
-    VkShaderModule createShaderModule(const std::vector<char>& code);
 
     //--------------------------------------------------------------------//
 
@@ -192,15 +157,8 @@ private:
     // the vulkan data (instance, surface, device)
     VulkanSetup vkSetup;
 
-    // the swap chain and its data
-    VkSwapchainKHR swapChain;
-    std::vector<VkImage> swapChainImages;
-    VkFormat swapChainImageFormat;
-    VkExtent2D swapChainExtent;
-    // need views to use images in the render pipeline
-    std::vector<VkImageView> swapChainImageViews;
-    // a vector containing all the framebuffers
-    std::vector<VkFramebuffer> swapChainFramebuffers;
+    // the swap chain and related data
+    SwapChainData swapChainData;
 
     // object data
     // vertex buffer
@@ -215,10 +173,6 @@ private:
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
 
-    // depth image
-    VkImage depthImage;
-    VkDeviceMemory depthImageMemory;
-    VkImageView depthImageView;
 
     // a texture
     VkImage textureImage;
@@ -226,8 +180,6 @@ private:
     VkSampler textureSampler; // lets us sample from an image, here the texture
     VkDeviceMemory textureImageMemory;
 
-    // the geometry render pass
-    VkRenderPass renderPass;
     // the imgui render pass
     VkRenderPass imGuiRenderPass;
 
@@ -237,10 +189,7 @@ private:
     VkDescriptorPool descriptorPool;
     VkDescriptorPool imGuiDescriptorPool;
     std::vector<VkDescriptorSet> descriptorSets; // descriptor set handles
-    VkPipelineLayout pipelineLayout;
-    // the pipeline
-    VkPipeline graphicsPipeline;
-
+   
     // command buffers
     VkCommandPool renderCommandPool;
     std::vector<VkCommandBuffer> renderCommandBuffers;
