@@ -21,12 +21,18 @@
     <ClCompile Include="source\DuckApplication.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="source\VulkanSetup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="headers\DuckApplication.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="headers\Utils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="headers\VulkanSetup.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

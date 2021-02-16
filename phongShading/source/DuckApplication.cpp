@@ -47,11 +47,14 @@ void DuckApplication::run() {
     // initialise a glfw window
     initWindow();
 
+    // create the window 
+    vkSetup.setupVulkan(window);
+
     // initialise vulkan
     initVulkan();
 
     // initialise ImGui
-    initImGui();
+    //initImGui();
 
     // run the main loop
     mainLoop();
@@ -64,6 +67,7 @@ void DuckApplication::run() {
 // ImGui Initialisation
 //
 
+/*
 void DuckApplication::initImGui() {
     // setup ImGui context
     IMGUI_CHECKVERSION();
@@ -111,20 +115,20 @@ void DuckApplication::initImGui() {
 
     //ImGui_ImplVulkan_DestroyFontUploadObjects();
 }
+*/
 
 //
-// Vulkna Initialisation
+// Vulkan Initialisation
 //
 
 void DuckApplication::initVulkan() {
-    createInstance();
+    //createInstance();
+    //setupDebugMessenger();
+    //createSurface();
+    //pickPhysicalDevice();
+    //createLogicalDevice();
 
-    setupDebugMessenger();
 
-    createSurface();
-
-    pickPhysicalDevice();
-    createLogicalDevice();
     createSwapChain();
     createImageViews();
 
@@ -157,6 +161,7 @@ void DuckApplication::initVulkan() {
 // Vulkan instance 
 //
 
+/*
 void DuckApplication::createInstance() {
     // if we have enabled validation layers and some requested layers aren't available, throw error
     if (enableValidationLayers && !checkValidationLayerSupport()) {
@@ -228,6 +233,7 @@ std::vector<const char*> DuckApplication::getRequiredExtensions() {
     // return the vector
     return extensions;
 }
+*/
 
 //
 // Graphics pipeline setup
@@ -383,7 +389,7 @@ void DuckApplication::createGraphicsPipeline() {
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
 
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+    if (vkCreatePipelineLayout(vkSetup.device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
         throw std::runtime_error("failed to create pipeline layout!");
     }
 
@@ -408,13 +414,13 @@ void DuckApplication::createGraphicsPipeline() {
     pipelineInfo.renderPass = renderPass;
     pipelineInfo.subpass = 0; // index of desired sub pass where pipeline will be used
 
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(vkSetup.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
         throw std::runtime_error("failed to create graphics pipeline!");
     }
 
     // destroy the shader modules, as we don't need them once the shaders have been compiled
-    vkDestroyShaderModule(device, fragShaderModule, nullptr);
-    vkDestroyShaderModule(device, vertShaderModule, nullptr);
+    vkDestroyShaderModule(vkSetup.device, fragShaderModule, nullptr);
+    vkDestroyShaderModule(vkSetup.device, vertShaderModule, nullptr);
 }
 
 void DuckApplication::createRenderPass() {
@@ -509,7 +515,7 @@ void DuckApplication::createRenderPass() {
     renderPassInfo.pDependencies = &dependency;
 
     // explicitly create the renderpass
-    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
+    if (vkCreateRenderPass(vkSetup.device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
         throw std::runtime_error("failed to create render pass!");
     }
 }
@@ -552,7 +558,7 @@ void DuckApplication::createImGuiRenderPass() {
     info.dependencyCount = 1;
     info.pDependencies = &dependency;
 
-    if (vkCreateRenderPass(device, &info, nullptr, &imGuiRenderPass) != VK_SUCCESS) {
+    if (vkCreateRenderPass(vkSetup.device, &info, nullptr, &imGuiRenderPass) != VK_SUCCESS) {
         throw std::runtime_error("Could not create Dear ImGui's render pass");
     }
 }
@@ -578,7 +584,7 @@ VkFormat DuckApplication::findSupportedFormat(const std::vector<VkFormat>& candi
         // linearTilingFeatures: Use cases that are supported with linear tiling
         // optimalTilingFeatures: Use cases that are supported with optimal tiling
         // bufferFeatures : Use cases that are supported for buffer
-        vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
+        vkGetPhysicalDeviceFormatProperties(vkSetup.physicalDevice, format, &props);
 
         // test if the format is supported
         if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
@@ -641,7 +647,7 @@ void DuckApplication::createDescriptorSetLayout() {
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());; // number of bindings
     layoutInfo.pBindings = bindings.data(); // pointer to the bindings
 
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+    if (vkCreateDescriptorSetLayout(vkSetup.device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor set layout!");
     }
 }
@@ -664,7 +670,7 @@ void DuckApplication::createDescriptorPool() {
     poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
 
     // create the descirptor pool
-    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+    if (vkCreateDescriptorPool(vkSetup.device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor pool!");
     }
 }
@@ -694,7 +700,7 @@ void DuckApplication::createImGuiDescriptorPool() {
     poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
 
     // create the descirptor pool
-    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &imGuiDescriptorPool) != VK_SUCCESS) {
+    if (vkCreateDescriptorPool(vkSetup.device, &poolInfo, nullptr, &imGuiDescriptorPool) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor pool!");
     }
 }
@@ -718,7 +724,7 @@ void DuckApplication::createDescriptorSets() {
     // when the desciptor set is destroyed. The function may fail if the pool is not sufieciently large, but succeed other times 
     // if the driver can solve the problem internally... so sometimes the driver will let us get away with an allocation
     // outside of the limits of the desciptor pool, and other times fail! Goes without saying that this is different for every machine...
-    if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+    if (vkAllocateDescriptorSets(vkSetup.device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate descriptor sets!");
     }
 
@@ -765,7 +771,7 @@ void DuckApplication::createDescriptorSets() {
         descriptorWrites[1].pTexelBufferView = nullptr; // desciptors refering to buffer views
 
         // update according to the configuration
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        vkUpdateDescriptorSets(vkSetup.device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 }
 
@@ -802,7 +808,7 @@ void DuckApplication::createTextureSampler() {
 
     samplerInfo.anisotropyEnable = VK_TRUE; // use unless performance is a concern (IT WILL BE)
     VkPhysicalDeviceProperties properties{}; // can query these here or at beginning for reference
-    vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+    vkGetPhysicalDeviceProperties(vkSetup.physicalDevice, &properties);
     // limites the amount of texel samples that can be used to calculate final colours, obtain from the device properties
     samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
     // self ecplanatory, can't be an arbitrary colour
@@ -818,7 +824,7 @@ void DuckApplication::createTextureSampler() {
     samplerInfo.maxLod = 0.0f;
 
     // now create the configured sampler
-    if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
+    if (vkCreateSampler(vkSetup.device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
         throw std::runtime_error("failed to create texture sampler!");
     }
 }
@@ -830,7 +836,7 @@ void DuckApplication::createTextureSampler() {
 void DuckApplication::createCommandPool(VkCommandPool* commandPool, VkCommandPoolCreateFlags flags) {
     // submit command buffers by submitting to one of the device queues, like graphics and presentation
     // each command pool can only allocate command buffers submitted on a single type of queue
-    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+    QueueFamilyIndices queueFamilyIndices = QueueFamilyIndices::findQueueFamilies(vkSetup.physicalDevice, vkSetup.surface);
 
     // command pool needs two parameters
     VkCommandPoolCreateInfo poolInfo{};
@@ -843,7 +849,7 @@ void DuckApplication::createCommandPool(VkCommandPool* commandPool, VkCommandPoo
     poolInfo.flags = flags; // in our case, we only record at beginning of program so leave empty
 
     // and create the command pool, we therfore ave to destroy it explicitly in cleanup
-    if (vkCreateCommandPool(device, &poolInfo, nullptr, commandPool) != VK_SUCCESS) {
+    if (vkCreateCommandPool(vkSetup.device, &poolInfo, nullptr, commandPool) != VK_SUCCESS) {
         throw std::runtime_error("failed to create command pool!");
     }
 }
@@ -861,7 +867,7 @@ void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* command
     // VK_COMMAND_BUFFER_LEVEL_SECONDARY -> cannot be submitted directly, but can be called from primary command buffers
     allocInfo.commandBufferCount = (uint32_t)commandBuffers->size(); // the number of buffers to allocate
 
-    if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers->data()) != VK_SUCCESS) {
+    if (vkAllocateCommandBuffers(vkSetup.device, &allocInfo, commandBuffers->data()) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate command buffers!");
     }
 
@@ -960,7 +966,7 @@ VkCommandBuffer DuckApplication::beginSingleTimeCommands(VkCommandPool& commandP
 
     // allocate the command buffer
     VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+    vkAllocateCommandBuffers(vkSetup.device, &allocInfo, &commandBuffer);
 
     // set the struct for the command buffer
     VkCommandBufferBeginInfo beginInfo{};
@@ -984,13 +990,13 @@ void DuckApplication::endSingleTimeCommands(VkCommandBuffer* commandBuffer, VkCo
     submitInfo.pCommandBuffers = commandBuffer;
 
     // submit the queue for execution
-    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueSubmit(vkSetup.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
     // here we could use a fence to schedule multiple transfers simultaneously and wait for them to complete instead
     // of executing all at the same time, alternatively use wait for the queue to execute
-    vkQueueWaitIdle(graphicsQueue);
+    vkQueueWaitIdle(vkSetup.graphicsQueue);
 
     // free the command buffer once the queue is no longer in use
-    vkFreeCommandBuffers(device, *commandPool, 1, commandBuffer);
+    vkFreeCommandBuffers(vkSetup.device, *commandPool, 1, commandBuffer);
 }
 
 void DuckApplication::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout) {
@@ -1148,7 +1154,7 @@ void DuckApplication::createFrameBuffers() {
         framebufferInfo.layers = 1; // single images so only one layer
 
         // attempt to create the framebuffer and place in the framebuffer container
-        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
+        if (vkCreateFramebuffer(vkSetup.device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to create framebuffer!");
         }
     }
@@ -1165,13 +1171,13 @@ void DuckApplication::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, 
     // bufferInfo.flags = 0; // to configure sparse memory
 
     // attempt to create a buffer
-    if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+    if (vkCreateBuffer(vkSetup.device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
         throw std::runtime_error("failed to create vertex buffer!");
     }
 
     // created a buffer, but haven't assigned any memory yet, also get the right memory requirements
     VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+    vkGetBufferMemoryRequirements(vkSetup.device, buffer, &memRequirements);
 
     // allocate the memory for the buffer
     VkMemoryAllocateInfo allocInfo{};
@@ -1183,12 +1189,12 @@ void DuckApplication::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, 
     // The maximum number of simultaneous memory allocations is limited by the maxMemoryAllocationCount physical device limit. The right way to 
     // allocate memory for large number of objects at the same time is to create a custom allocator that splits up a single allocation among many 
     // different objects by using the offset parameters seen in other functions
-    if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+    if (vkAllocateMemory(vkSetup.device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate vertex buffer memory!");
     }
 
     // associate memory with buffer
-    vkBindBufferMemory(device, buffer, bufferMemory, 0);
+    vkBindBufferMemory(vkSetup.device, buffer, bufferMemory, 0);
 
 }
 
@@ -1212,7 +1218,7 @@ uint32_t DuckApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFl
     // GPUs allocate dufferent types of memory, varying in terms of allowed operations and performance. Combine buffer and application
     // requirements to find best type of memory
     VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+    vkGetPhysicalDeviceMemoryProperties(vkSetup.physicalDevice, &memProperties);
     // two arrays in the struct, memoryTypes and memoryHeaps. Heaps are distinct ressources like VRAM and swap space in RAM
     // types exist within these heaps
 
@@ -1289,9 +1295,9 @@ void DuckApplication::createVertexBuffer() {
     void* data;
     // access a region in memory ressource defined by offset and size (0 and bufferInfo.size), can use special value VK_WHOLE_SIZE to map all of the memory
     // second to last is for flages (none in current API so set to 0), last is output for pointer to mapped memory
-    vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+    vkMapMemory(vkSetup.device, stagingBufferMemory, 0, bufferSize, 0, &data);
     memcpy(data, vertices.data(), (size_t)bufferSize); // memcpy the data in the vertex list to that region in memory
-    vkUnmapMemory(device, stagingBufferMemory); // unmap the memory 
+    vkUnmapMemory(vkSetup.device, stagingBufferMemory); // unmap the memory 
     // possible issues as driver may not immediately copy data into buffer memory, writes to buffer may not be visible in mapped memory yet...
     // either use a heap that is host coherent (VK_MEMORY_PROPERTY_HOST_COHERENT_BIT in memory requirements)
     // or call vkFlushMappedMemoryRanges after writing to mapped memory, and call vkInvalidateMappedMemoryRanges before reading from the mapped memory
@@ -1302,8 +1308,8 @@ void DuckApplication::createVertexBuffer() {
     copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
 
     // cleanup after using the staging buffer
-    vkDestroyBuffer(device, stagingBuffer, nullptr);
-    vkFreeMemory(device, stagingBufferMemory, nullptr);
+    vkDestroyBuffer(vkSetup.device, stagingBuffer, nullptr);
+    vkFreeMemory(vkSetup.device, stagingBufferMemory, nullptr);
 }
 
 void DuckApplication::createIndexBuffer() {
@@ -1315,17 +1321,17 @@ void DuckApplication::createIndexBuffer() {
     createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
     void* data;
-    vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+    vkMapMemory(vkSetup.device, stagingBufferMemory, 0, bufferSize, 0, &data);
     memcpy(data, indices.data(), (size_t)bufferSize);
-    vkUnmapMemory(device, stagingBufferMemory);
+    vkUnmapMemory(vkSetup.device, stagingBufferMemory);
 
     // different usage bit flag VK_BUFFER_USAGE_INDEX_BUFFER_BIT instead of VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
     createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
 
     copyBuffer(stagingBuffer, indexBuffer, bufferSize);
 
-    vkDestroyBuffer(device, stagingBuffer, nullptr);
-    vkFreeMemory(device, stagingBufferMemory, nullptr);
+    vkDestroyBuffer(vkSetup.device, stagingBuffer, nullptr);
+    vkFreeMemory(vkSetup.device, stagingBufferMemory, nullptr);
 }
 
 //
@@ -1354,9 +1360,9 @@ void DuckApplication::createTextureImage() {
 
     // directly copy the pixels in the array from the image loading library to the buffer
     void* data;
-    vkMapMemory(device, stagingBufferMemory, 0, imageSize, 0, &data);
+    vkMapMemory(vkSetup.device, stagingBufferMemory, 0, imageSize, 0, &data);
     memcpy(data, pixels, static_cast<size_t>(imageSize));
-    vkUnmapMemory(device, stagingBufferMemory);
+    vkUnmapMemory(vkSetup.device, stagingBufferMemory);
 
     // and cleanup pixels after copying in the data
     stbi_image_free(pixels);
@@ -1372,8 +1378,8 @@ void DuckApplication::createTextureImage() {
     transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     // cleanup the staging buffer and its memory
-    vkDestroyBuffer(device, stagingBuffer, nullptr);
-    vkFreeMemory(device, stagingBufferMemory, nullptr);
+    vkDestroyBuffer(vkSetup.device, stagingBuffer, nullptr);
+    vkFreeMemory(vkSetup.device, stagingBufferMemory, nullptr);
 }
 
 void DuckApplication::createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
@@ -1397,13 +1403,13 @@ void DuckApplication::createImage(uint32_t width, uint32_t height, VkFormat form
 
     // create the image. The hardware could fail for the format we have specified. We should have a list of acceptable formats and choose the best one depending
     // on the selection of formats supported by the device
-    if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
+    if (vkCreateImage(vkSetup.device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
         throw std::runtime_error("failed to create image!");
     }
 
     // allocate memory for an image, similar to a buffer allocation
     VkMemoryRequirements memRequirements;
-    vkGetImageMemoryRequirements(device, image, &memRequirements);
+    vkGetImageMemoryRequirements(vkSetup.device, image, &memRequirements);
 
     // info on the allocation
     VkMemoryAllocateInfo allocInfo{};
@@ -1412,12 +1418,12 @@ void DuckApplication::createImage(uint32_t width, uint32_t height, VkFormat form
     allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     // attempt to create an image
-    if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
+    if (vkAllocateMemory(vkSetup.device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate image memory!");
     }
 
     // associate the memory to the image
-    vkBindImageMemory(device, image, imageMemory, 0);
+    vkBindImageMemory(vkSetup.device, image, imageMemory, 0);
 }
 
 void DuckApplication::createTextureImageView() {
@@ -1447,7 +1453,7 @@ VkImageView DuckApplication::createImageView(VkImage image, VkFormat format, VkI
 
     // attemp to create the image view
     VkImageView imageView;
-    if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+    if (vkCreateImageView(vkSetup.device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
         throw std::runtime_error("failed to create texture image view!");
     }
 
@@ -1459,6 +1465,7 @@ VkImageView DuckApplication::createImageView(VkImage image, VkFormat format, VkI
 // Device setup
 //
 
+/*
 void DuckApplication::createLogicalDevice() {
     // query the queue families available on the device
     QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
@@ -1649,6 +1656,7 @@ QueueFamilyIndices DuckApplication::findQueueFamilies(VkPhysicalDevice device) {
 
     return indices;
 }
+*/
 
 //
 // Swap chain and surface setup
@@ -1657,28 +1665,28 @@ QueueFamilyIndices DuckApplication::findQueueFamilies(VkPhysicalDevice device) {
 SwapChainSupportDetails DuckApplication::querySwapChainSupport(VkPhysicalDevice device) {
     SwapChainSupportDetails details;
     // query the surface capabilities and store in a VkSurfaceCapabilities struct
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities); // takes into account device and surface when determining capabilities
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, vkSetup.surface, &details.capabilities); // takes into account device and surface when determining capabilities
 
     // same as we have seen many times before
     uint32_t formatCount;
     // query the available formats, pass null ptr to just set the count
-    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(device, vkSetup.surface, &formatCount, nullptr);
 
     // if there are formats
     if (formatCount != 0) {
         // then resize the vector accordingly
         details.formats.resize(formatCount);
         // and set details struct fromats vector with the data pointer
-        vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, details.formats.data());
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device, vkSetup.surface, &formatCount, details.formats.data());
     }
 
     // exact same thing as format for presentation modes
     uint32_t presentModeCount;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(device, vkSetup.surface, &presentModeCount, nullptr);
 
     if (presentModeCount != 0) {
         details.presentModes.resize(presentModeCount);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, details.presentModes.data());
+        vkGetPhysicalDeviceSurfacePresentModesKHR(device, vkSetup.surface, &presentModeCount, details.presentModes.data());
     }
 
     return details;
@@ -1750,7 +1758,7 @@ VkExtent2D DuckApplication::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& cap
 
 void DuckApplication::createSwapChain() {
     // create the swap chain by checking for swap chain support
-    SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
+    SwapChainSupportDetails swapChainSupport = querySwapChainSupport(vkSetup.physicalDevice);
 
     // set the swap chain properties using the above three methods for the format, presentation mode and capabilities
     VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
@@ -1769,7 +1777,7 @@ void DuckApplication::createSwapChain() {
     // start creating a structure for the swap chain
     VkSwapchainCreateInfoKHR createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.surface = surface; // specify the surface the swap chain should be tied to
+    createInfo.surface = vkSetup.surface; // specify the surface the swap chain should be tied to
     // set details
     createInfo.minImageCount = imageCount;
     createInfo.imageFormat = surfaceFormat.format;
@@ -1779,7 +1787,7 @@ void DuckApplication::createSwapChain() {
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // bit field, specifies types of operations we'll use images in swap chain for
 
     // how to handle the swap chain images across multiple queue families (in case graphics queue is different to presentation queue)
-    QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+    QueueFamilyIndices indices = QueueFamilyIndices::findQueueFamilies(vkSetup.physicalDevice, vkSetup.surface);
     uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
 
     // if the queues differ
@@ -1805,16 +1813,16 @@ void DuckApplication::createSwapChain() {
     createInfo.oldSwapchain = VK_NULL_HANDLE;
 
     // finally create the swap chain
-    if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
+    if (vkCreateSwapchainKHR(vkSetup.device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
         throw std::runtime_error("failed to create swap chain!");
     }
 
     // get size of swap chain images
-    vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
+    vkGetSwapchainImagesKHR(vkSetup.device, swapChain, &imageCount, nullptr);
     // resize accordingly
     swapChainImages.resize(imageCount);
     // pull the images
-    vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
+    vkGetSwapchainImagesKHR(vkSetup.device, swapChain, &imageCount, swapChainImages.data());
 
     // save format and extent
     swapChainImageFormat = surfaceFormat.format;
@@ -1834,7 +1842,7 @@ void DuckApplication::recreateSwapChain() {
     }
 
     // wait before touching if in use by the device
-    vkDeviceWaitIdle(device);
+    vkDeviceWaitIdle(vkSetup.device);
 
     // destroy the previous swap chain
     cleanupSwapChain();
@@ -1850,58 +1858,57 @@ void DuckApplication::recreateSwapChain() {
     createFrameBuffers(); // directly depend on swap chain images so recreate
     createUniformBuffers(); // depends on swap chain size so recreate
     createDescriptorPool();
-    createImGuiDescriptorPool();
+    //createImGuiDescriptorPool();
     createDescriptorSets();
     createCommandBuffers(&renderCommandBuffers, renderCommandPool); // directly depend on swap chain images so recreate
 
     // tell ImGui to update the swap chain information
-    ImGui_ImplVulkan_SetMinImageCount(static_cast<uint32_t>(swapChainImages.size()));
-
+    //ImGui_ImplVulkan_SetMinImageCount(static_cast<uint32_t>(swapChainImages.size()));
 }
 
 void DuckApplication::cleanupSwapChain() {
     // destroy the depth image and related stuff (view and free memory)
-    vkDestroyImageView(device, depthImageView, nullptr);
-    vkDestroyImage(device, depthImage, nullptr);
-    vkFreeMemory(device, depthImageMemory, nullptr);
+    vkDestroyImageView(vkSetup.device, depthImageView, nullptr);
+    vkDestroyImage(vkSetup.device, depthImage, nullptr);
+    vkFreeMemory(vkSetup.device, depthImageMemory, nullptr);
 
     // destroy the frame buffers
     for (size_t i = 0; i < swapChainFramebuffers.size(); i++) {
-        vkDestroyFramebuffer(device, swapChainFramebuffers[i], nullptr);
+        vkDestroyFramebuffer(vkSetup.device, swapChainFramebuffers[i], nullptr);
     }
 
     // destroy the command buffers. This lets us preserve the command pool rather than wastefully creating and deestroying repeatedly
-    vkFreeCommandBuffers(device, renderCommandPool, static_cast<uint32_t>(renderCommandBuffers.size()), renderCommandBuffers.data());
+    vkFreeCommandBuffers(vkSetup.device, renderCommandPool, static_cast<uint32_t>(renderCommandBuffers.size()), renderCommandBuffers.data());
 
     // destroy pipeline and related data
-    vkDestroyPipeline(device, graphicsPipeline, nullptr);
-    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-    vkDestroyRenderPass(device, renderPass, nullptr);
+    vkDestroyPipeline(vkSetup.device, graphicsPipeline, nullptr);
+    vkDestroyPipelineLayout(vkSetup.device, pipelineLayout, nullptr);
+    vkDestroyRenderPass(vkSetup.device, renderPass, nullptr);
 
     // loop over the image views and destroy them. NB we don't destroy the images because they are implicilty created
     // and destroyed by the swap chain
     for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-        vkDestroyImageView(device, swapChainImageViews[i], nullptr);
+        vkDestroyImageView(vkSetup.device, swapChainImageViews[i], nullptr);
     }
 
     // destroy the swap chain proper
-    vkDestroySwapchainKHR(device, swapChain, nullptr);
+    vkDestroySwapchainKHR(vkSetup.device, swapChain, nullptr);
 
     // also destroy the uniform buffers that worked with the swap chain
     for (size_t i = 0; i < swapChainImages.size(); i++) {
-        vkDestroyBuffer(device, uniformBuffers[i], nullptr);
-        vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
+        vkDestroyBuffer(vkSetup.device, uniformBuffers[i], nullptr);
+        vkFreeMemory(vkSetup.device, uniformBuffersMemory[i], nullptr);
     }
 
     // cleanup the descriptor pools
-    vkDestroyDescriptorPool(device, imGuiDescriptorPool, nullptr);
-    vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+    //vkDestroyDescriptorPool(vkSetup.device, imGuiDescriptorPool, nullptr);
+    vkDestroyDescriptorPool(vkSetup.device, descriptorPool, nullptr);
 }
 
 void DuckApplication::createSurface() {
     // takes simple arguments instead of structs
     // object is platform agnostic but creation is not, this is handled by the glfw method
-    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+    if (glfwCreateWindowSurface(vkSetup.instance, window, nullptr, &vkSetup.surface) != VK_SUCCESS) {
         throw std::runtime_error("failed to create window surface!");
     }
 }
@@ -1937,9 +1944,9 @@ void DuckApplication::createSyncObjects() {
     // simply loop over each frame and create semaphores for them
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         // attempt to create the semaphors
-        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
-            vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
+        if (vkCreateSemaphore(vkSetup.device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(vkSetup.device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
+            vkCreateFence(vkSetup.device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to create semaphores!");
         }
     }
@@ -1957,12 +1964,12 @@ void DuckApplication::mainLoop() {
 
         // the ui stuff
         /*
-        */
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
         ImGui::ShowDemoWindow();
         ImGui::Render();
+        */
 
         // magic stuff with ImGui happening here
         //memcpy(&wd->ClearValue.color.float32[0], &clear_color, 4 * sizeof(float));
@@ -1970,7 +1977,7 @@ void DuckApplication::mainLoop() {
         // the vulkan stuff
         drawFrame();
     }
-    vkDeviceWaitIdle(device);
+    vkDeviceWaitIdle(vkSetup.device);
 }
 
 void DuckApplication::drawFrame() {
@@ -1984,12 +1991,12 @@ void DuckApplication::drawFrame() {
     // semaphores are for syncing ops within or across cmd queues. We want to sync queue op to draw cmds and presentation so pref semaphores here
 
     // at the start of the frame, make sure that the previous frame has finished which will signal the fence
-    vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+    vkWaitForFences(vkSetup.device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
     // retrieve an image from the swap chain
     uint32_t imageIndex;
     // swap chain is an extension so use the vk*KHR function
-    VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex); // params:
+    VkResult result = vkAcquireNextImageKHR(vkSetup.device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex); // params:
     // the logical device and the swap chain we want to restrieve image from
     // a timeout in ns. Using UINT64_MAX disables it
     // synchronisation objects, so a semaphore
@@ -2008,7 +2015,7 @@ void DuckApplication::drawFrame() {
 
     // Check if a previous frame is using this image (i.e. there is its fence to wait on)
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
-        vkWaitForFences(device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+        vkWaitForFences(vkSetup.device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
     }
     // Mark the image as now being in use by this frame
     imagesInFlight[imageIndex] = inFlightFences[currentFrame];
@@ -2037,11 +2044,11 @@ void DuckApplication::drawFrame() {
     submitInfo.pSignalSemaphores = signalSemaphores;
 
     // reset the fence to block next frame just before using the fence
-    vkResetFences(device, 1, &inFlightFences[currentFrame]);
+    vkResetFences(vkSetup.device, 1, &inFlightFences[currentFrame]);
 
     // submit the command buffer to the graphics queue, takes an array of submitinfo when work load is much larger
     // last param is a fence, should be signaled when the cmd buffer finished executing so use to signal frame has finished
-    if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
+    if (vkQueueSubmit(vkSetup.graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
         throw std::runtime_error("failed to submit draw command buffer!");
     }
 
@@ -2060,7 +2067,7 @@ void DuckApplication::drawFrame() {
     presentInfo.pResults = nullptr; // Optional
 
     // submit the request to put an image from the swap chain to the presentation queue
-    result = vkQueuePresentKHR(presentQueue, &presentInfo);
+    result = vkQueuePresentKHR(vkSetup.presentQueue, &presentInfo);
 
     // similar to when acquiring the swap chain image, check that the presentation queue can accept the image, also check for resizing
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
@@ -2096,9 +2103,9 @@ void DuckApplication::updateUniformBuffer(uint32_t currentImage) {
 
     // copy the uniform buffer object into the uniform buffer
     void* data;
-    vkMapMemory(device, uniformBuffersMemory[currentImage], 0, sizeof(ubo), 0, &data);
+    vkMapMemory(vkSetup.device, uniformBuffersMemory[currentImage], 0, sizeof(ubo), 0, &data);
     memcpy(data, &ubo, sizeof(ubo));
-    vkUnmapMemory(device, uniformBuffersMemory[currentImage]);
+    vkUnmapMemory(vkSetup.device, uniformBuffersMemory[currentImage]);
 }
 
 //
@@ -2141,7 +2148,7 @@ VkShaderModule DuckApplication::createShaderModule(const std::vector<char>& code
 
     VkShaderModule shaderModule;
     // create the shader module 
-    if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+    if (vkCreateShaderModule(vkSetup.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
         throw std::runtime_error("failed to create shader module!");
     }
 
@@ -2158,32 +2165,34 @@ void DuckApplication::cleanup() {
     cleanupSwapChain();
 
     // destroy the texture image view and sampler
-    vkDestroySampler(device, textureSampler, nullptr);
-    vkDestroyImageView(device, textureImageView, nullptr);
+    vkDestroySampler(vkSetup.device, textureSampler, nullptr);
+    vkDestroyImageView(vkSetup.device, textureImageView, nullptr);
 
     // destroy the texture
-    vkDestroyImage(device, textureImage, nullptr);
-    vkFreeMemory(device, textureImageMemory, nullptr);
+    vkDestroyImage(vkSetup.device, textureImage, nullptr);
+    vkFreeMemory(vkSetup.device, textureImageMemory, nullptr);
 
     // destroy the descriptor layout
-    vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(vkSetup.device, descriptorSetLayout, nullptr);
 
     // destroy the index buffer and free its memory
-    vkDestroyBuffer(device, indexBuffer, nullptr);
-    vkFreeMemory(device, indexBufferMemory, nullptr);
+    vkDestroyBuffer(vkSetup.device, indexBuffer, nullptr);
+    vkFreeMemory(vkSetup.device, indexBufferMemory, nullptr);
 
     // destroy the vertex buffer and free its memory
-    vkDestroyBuffer(device, vertexBuffer, nullptr);
-    vkFreeMemory(device, vertexBufferMemory, nullptr);
+    vkDestroyBuffer(vkSetup.device, vertexBuffer, nullptr);
+    vkFreeMemory(vkSetup.device, vertexBufferMemory, nullptr);
 
     // loop over each frame and destroy its semaphores 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
-        vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-        vkDestroyFence(device, inFlightFences[i], nullptr);
+        vkDestroySemaphore(vkSetup.device, renderFinishedSemaphores[i], nullptr);
+        vkDestroySemaphore(vkSetup.device, imageAvailableSemaphores[i], nullptr);
+        vkDestroyFence(vkSetup.device, inFlightFences[i], nullptr);
     }
 
-    vkDestroyCommandPool(device, renderCommandPool, nullptr);
+    vkDestroyCommandPool(vkSetup.device, renderCommandPool, nullptr);
+
+    /*
     // remove the logical device, no direct interaction with instance so not passed as argument
     vkDestroyDevice(device, nullptr);
 
@@ -2196,6 +2205,7 @@ void DuckApplication::cleanup() {
     vkDestroySurfaceKHR(instance, surface, nullptr);
     // only called before program exits, destroys the vulkan instance
     vkDestroyInstance(instance, nullptr);
+    */
 
     // destory the window
     glfwDestroyWindow(window);
@@ -2245,7 +2255,7 @@ void DuckApplication::setupDebugMessenger() {
     populateDebugMessengerCreateInfo(createInfo);
 
     // create the debug messenger
-    if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
+    if (CreateDebugUtilsMessengerEXT(vkSetup.instance, &createInfo, nullptr, &vkSetup.debugMessenger) != VK_SUCCESS) {
         throw std::runtime_error("failed to set up debug messenger!");
     }
 }

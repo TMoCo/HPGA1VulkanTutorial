@@ -1,6 +1,9 @@
 #ifndef DUCK_APPLICATION_H
 #define DUCK_APPLICATION_H
 
+// include the vulkan window data
+#include "../headers/VulkanSetup.h"
+
 // glfw window library
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -78,49 +81,21 @@ struct UniformBufferObject {
     glm::mat4 proj;
 };
 
-// a struct for the queue family index
-struct QueueFamilyIndices {
-    // queue family supporting drawing commands
-    std::optional<uint32_t> graphicsFamily;
-    // presentation of image to vulkan surface handled by the device
-    std::optional<uint32_t> presentFamily;
-
-    // returns true if the device supports the drawing commands AND the image can be presented to the surface
-    inline bool isComplete() {
-        return graphicsFamily.has_value() && presentFamily.has_value();
-    }
-};
-
-// a struct containing the details for support of a swap chain
-struct SwapChainSupportDetails {
-    VkSurfaceCapabilitiesKHR capabilities;
-    std::vector<VkSurfaceFormatKHR> formats;
-    std::vector<VkPresentModeKHR> presentModes;
-};
-
-
 //
 // The application
 //
 
 // program wrapped in class where vulkan objects are stored as private members
 class DuckApplication {
+
 public:
+
     void run();
 
 private:
-    void initImGui();
-
     //--------------------------------------------------------------------//
 
     void initVulkan();
-
-    //--------------------------------------------------------------------//
-
-    // create a vulkan instance
-    void createInstance();
-
-    std::vector<const char*> getRequiredExtensions();
 
     //--------------------------------------------------------------------//
 
@@ -196,21 +171,6 @@ private:
     
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
 
-    //--------------------------------------------------------------------//
-
-    // create a device interface
-    void createLogicalDevice();
-
-    // picks a physical device (graphics card)
-    void pickPhysicalDevice();
-
-    // checks if the device is suitable for our operation
-    bool isDeviceSuitable(VkPhysicalDevice device);
-
-    // checks if a device supports a certain extension
-    bool checkDeviceExtensionSupport(VkPhysicalDevice device);
-
-    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 
     //--------------------------------------------------------------------//
 
@@ -227,9 +187,6 @@ private:
     void recreateSwapChain();
 
     void cleanupSwapChain();
-
-    // create a window surface
-    void createSurface();
 
     void createImageViews();
 
@@ -269,37 +226,15 @@ private:
 
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
 
-    //--------------------------------------------------------------------//
-
-    // sets up the debug messenger when in debug mode
-    void setupDebugMessenger();
-
-    // finds where the debug messenger creator is located and calls it (if available)
-    static VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
-        const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
-        const VkAllocationCallbacks* pAllocator,
-        VkDebugUtilsMessengerEXT* pDebugMessenger);
-
-    // same as creator, but for destroying
-    static void DestroyDebugUtilsMessengerEXT(VkInstance instance,
-        VkDebugUtilsMessengerEXT debugMessenger,
-        const VkAllocationCallbacks* pAllocator);
-
-    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
-        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-        VkDebugUtilsMessageTypeFlagsEXT messageType,
-        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-        void* pUserData);
-
-    void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
-
-    bool checkValidationLayerSupport();
-
 // private members
 private:
     // the window
     GLFWwindow* window;
 
+    // the vulkan data
+    VulkanSetup vkSetup;
+
+    /*
     // vulkan instance struct
     VkInstance instance;
     // a struct handle that manages debug callbacks
@@ -316,6 +251,7 @@ private:
     VkQueue graphicsQueue;
     // queue handle for interacting with the presentation queue
     VkQueue presentQueue;
+    */
 
     // the swap chain and its data
     VkSwapchainKHR swapChain;

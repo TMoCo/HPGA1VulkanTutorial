@@ -157,10 +157,12 @@
   <ItemGroup>
     <ClCompile Include="source\DuckApplication.cpp" />
     <ClCompile Include="source\main.cpp" />
+    <ClCompile Include="source\VulkanSetup.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="headers\DuckApplication.h" />
     <ClInclude Include="headers\Utils.h" />
+    <ClInclude Include="headers\VulkanSetup.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="source\shaders\compile.bat" />
