@@ -1,5 +1,5 @@
 //
-// a convenience header file for constants etc. used in the application
+// A convenience header file for constants etc. used in the application
 //
 
 #ifndef UTILS_H
@@ -13,18 +13,22 @@
 
 #include <vulkan/vulkan_core.h> // vulkan core structs &c
 
+//////////////////////
 //
 // Constants
 //
+//////////////////////
 
 // constants for window dimensions
-const uint32_t WIDTH = 800;
+const uint32_t WIDTH =  800;
 const uint32_t HEIGHT = 600;
 
-const std::string APP_NAME = "Basic application";
+// strings for the vulkan instance
+const std::string APP_NAME =    "Basic application";
 const std::string ENGINE_NAME = "No Engine";
 
-const std::string MODEL_PATH = "C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\assets\\mallard.obj";
+// paths to the shaders used
+const std::string MODEL_PATH =   "C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\assets\\mallard.obj";
 const std::string TEXTURE_PATH = "C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\assets\\mallard.jpg";
 
 // validation layers for debugging
@@ -38,9 +42,11 @@ const std::vector<const char*> deviceExtensions = {
 // in flight frames number
 const size_t MAX_FRAMES_IN_FLIGHT = 2;
 
+//////////////////////
 //
 // Debug preprocessor
 //
+//////////////////////
 
 //#define NDEBUG // uncomment to remove validation layers for debug
 #ifdef NDEBUG
@@ -56,9 +62,11 @@ const bool enableVerboseValidation = true;
 const bool enableVerboseValidation = false;
 #endif
 
+//////////////////////
 //
 // Utility structs
 //
+//////////////////////
 
 // a struct for the queue family index
 struct QueueFamilyIndices {
@@ -115,15 +123,16 @@ struct QueueFamilyIndices {
 
 // a struct containing the details for support of a swap chain
 struct SwapChainSupportDetails {
-    VkSurfaceCapabilitiesKHR capabilities;
+    VkSurfaceCapabilitiesKHR        capabilities;
     std::vector<VkSurfaceFormatKHR> formats;
-    std::vector<VkPresentModeKHR> presentModes;
+    std::vector<VkPresentModeKHR>   presentModes;
 };
 
+//////////////////////
 //
 // Utility functions
 //
-
+//////////////////////
 
 
 #endif // !UTILS_H

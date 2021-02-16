@@ -1,8 +1,13 @@
+//
+// The class containing the application definition
+//
+
 #ifndef DUCK_APPLICATION_H
 #define DUCK_APPLICATION_H
 
 // include the vulkan window data
 #include "../headers/VulkanSetup.h"
+#include "../headers/Vertex.h"
 
 // glfw window library
 #define GLFW_INCLUDE_VULKAN
@@ -26,53 +31,6 @@
 //
 // Helper structs
 //
-
-// a simple vertex struct
-struct Vertex {
-    glm::vec3 pos; // position 
-    glm::vec3 normal; // normal
-    glm::vec3 color; // colour
-    glm::vec2 texCoord; // texture coordinate
-
-
-    // binding description of a vertex
-    static VkVertexInputBindingDescription getBindingDescription() {
-        // a struct containing info on how to store vertex data
-        VkVertexInputBindingDescription bindingDescription{};
-        bindingDescription.binding = 0; // index of binding in array of bindings
-        bindingDescription.stride = sizeof(Vertex); // bytes in one entry
-        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // how to move the next data
-        // other option for instancing -> VK_VERTEX_INPUT_RATE_INSTANCE
-        return bindingDescription;
-    }
-
-    static std::array<VkVertexInputAttributeDescription, 4> getAttributeDescriptions() {
-        // we have two attributes: position and colour. The struct describes how to extract an attribute
-        // from a chunk of vertex data from a binding description
-        std::array<VkVertexInputAttributeDescription, 4> attributeDescriptions{};
-        // position
-        attributeDescriptions[0].binding = 0;
-        attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[0].offset = offsetof(Vertex, pos);
-        // normal
-        attributeDescriptions[1].binding = 0;
-        attributeDescriptions[1].location = 1;
-        attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[1].offset = offsetof(Vertex, normal);
-        // colour
-        attributeDescriptions[2].binding = 0;
-        attributeDescriptions[2].location = 2;
-        attributeDescriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[2].offset = offsetof(Vertex, color);
-        // tex coord
-        attributeDescriptions[3].binding = 0;
-        attributeDescriptions[3].location = 3;
-        attributeDescriptions[3].format = VK_FORMAT_R32G32_SFLOAT;
-        attributeDescriptions[3].offset = offsetof(Vertex, texCoord);
-        return attributeDescriptions;
-    }
-};
 
 // a struct containing uniforms
 struct UniformBufferObject {
@@ -231,27 +189,8 @@ private:
     // the window
     GLFWwindow* window;
 
-    // the vulkan data
+    // the vulkan data (instance, surface, device)
     VulkanSetup vkSetup;
-
-    /*
-    // vulkan instance struct
-    VkInstance instance;
-    // a struct handle that manages debug callbacks
-    VkDebugUtilsMessengerEXT debugMessenger;
-    // platform agnostic handle to a surface
-    VkSurfaceKHR surface;
-
-    // the graphics card selected
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    // logical device that interfaces with the physical device
-    VkDevice device;
-
-    // queue handle for interacting with the graphics queue, implicitly cleaned up by destroying devices
-    VkQueue graphicsQueue;
-    // queue handle for interacting with the presentation queue
-    VkQueue presentQueue;
-    */
 
     // the swap chain and its data
     VkSwapchainKHR swapChain;

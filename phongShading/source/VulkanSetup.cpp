@@ -1,3 +1,7 @@
+//
+// Definition of the VulkanSetup class
+//
+
 // include the class declaration
 #include "../headers/VulkanSetup.h"
 
@@ -12,30 +16,14 @@
 #include <set>
 #include <string>
 
-//
-// Definition of the VulkanSetup class
-//
-
-VulkanSetup::~VulkanSetup() {
-    // remove the logical device, no direct interaction with instance so not passed as argument
-    vkDestroyDevice(device, nullptr);
-    // destroy the window surface
-    vkDestroySurfaceKHR(instance, surface, nullptr);
-    // if debug activated, remove the messenger
-    if (enableValidationLayers) {
-        DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
-    }
-    // only called before program exits, destroys the vulkan instance
-    vkDestroyInstance(instance, nullptr);
-}
 
 //////////////////////
 //
-// THE SETUP
+// INITIALISATION AND DESTRUCTION
 //
 //////////////////////
 
-void VulkanSetup::setupVulkan(GLFWwindow* theWindow) {
+void VulkanSetup::initSetup(GLFWwindow* theWindow) {
     // keep a reference to the glfw window for now
     window = theWindow;
     // start by creating a vulkan instance
@@ -48,6 +36,21 @@ void VulkanSetup::setupVulkan(GLFWwindow* theWindow) {
     pickPhysicalDevice();
     // create the logical device for interfacing with the physical device
     createLogicalDevice();
+    // we got this far so signal that the setup was complete
+    setupComplete = true;
+}
+
+void VulkanSetup::cleanupSetup() {
+    // remove the logical device, no direct interaction with instance so not passed as argument
+    vkDestroyDevice(device, nullptr);
+    // destroy the window surface
+    vkDestroySurfaceKHR(instance, surface, nullptr);
+    // if debug activated, remove the messenger
+    if (enableValidationLayers) {
+        DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+    }
+    // only called before program exits, destroys the vulkan instance
+    vkDestroyInstance(instance, nullptr);
 }
 
 //////////////////////

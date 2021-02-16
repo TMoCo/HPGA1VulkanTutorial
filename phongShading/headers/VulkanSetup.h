@@ -1,40 +1,30 @@
 // 
 // A helper class that creates an contains the vulkan data used in an application
+// it aims to contain the vulkan structs that do not change during the lifetime of the
+// application, such as the instance, the device, and the surface (although this is the case
+// for single windowed applications, I assume support for multiple windows would require
+// multiple surfaces). An application will have to use this class's member variables to
+// run, the latter are NOT initiated when the object is created but when the setupVulkan function
+// is called. A GLFW window needs to be initialised first and passed as an argument to the
+// function so that vulkan can work with it. A reference of the window is kept as a pointer for convenience
 //
 
 #ifndef VULKAN_SETUP_H
 #define VULKAN_SETUP_H
 
-// vulkan definitions
-#include <vulkan/vk_platform.h>
-#include <vulkan/vulkan_core.h>
-
 // constants and structs
 #include "../headers/Utils.h"
 
+// vulkan definitions
+#include <vulkan/vk_platform.h>
+#include <vulkan/vulkan_core.h>
 
 // glfw window library
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-// vector container
-#include <vector>
-// the optional wrapper
-#include <optional>
 
 class VulkanSetup {
-
-    //////////////////////
-    //
-    // DESTRUCTOR
-    //
-    //////////////////////
-
-public:
-
-    // destructor, handles the explicit destruction of the vulkan data
-    ~VulkanSetup();
-
     //////////////////////
     //
     // MEMBER FUNCTIONS
@@ -44,10 +34,12 @@ public:
 public:
 
     //
-    // Initiate the setup
+    // Initiate and cleanup the setup
     //
 
-    void setupVulkan(GLFWwindow* window);
+    void initSetup(GLFWwindow* window);
+
+    void cleanupSetup();
 
 private:
 
@@ -140,7 +132,7 @@ public:
     //
 
 	// vulkan instance struct
-	VkInstance instance;
+	VkInstance               instance;
     // a struct handle that manages debug callbacks
     VkDebugUtilsMessengerEXT debugMessenger;
 
@@ -158,17 +150,19 @@ public:
     // the physical device chosen for the application
     VkPhysicalDevice physicalDevice;
     // logical device that interfaces with the physical device
-    VkDevice device;
+    VkDevice         device;
     // queue handle for interacting with the graphics queue, implicitly cleaned up by destroying devices
-    VkQueue graphicsQueue;
+    VkQueue          graphicsQueue;
     // queue handle for interacting with the presentation queue
-    VkQueue presentQueue;
+    VkQueue          presentQueue;
+
+    //
+    // Setup flag
+    //
+
+    bool setupComplete = false;
 
 };
-
-
-
-
 
 #endif // !VULKAN_SETUP_H
 
