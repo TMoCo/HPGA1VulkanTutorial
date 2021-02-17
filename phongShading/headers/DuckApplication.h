@@ -58,8 +58,13 @@ private:
 
     //--------------------------------------------------------------------//
 
+    void initImGui();
 
     void createImGuiRenderPass();
+
+    void uploadFonts();
+
+    void renderUI();
 
     //--------------------------------------------------------------------//
 
@@ -80,6 +85,8 @@ private:
     void createCommandPool(VkCommandPool* commandPool, VkCommandPoolCreateFlags flags);
 
     void createCommandBuffers(std::vector<VkCommandBuffer>* commandBuffers, VkCommandPool& commandPool);
+
+    void recordGemoetryCommandBuffer();
 
     //--------------------------------------------------------------------//
     
@@ -163,8 +170,10 @@ private:
     VkSampler textureSampler; // lets us sample from an image, here the texture
     VkDeviceMemory textureImageMemory;
 
+
     // the imgui render pass
     VkRenderPass imGuiRenderPass;
+
 
     // layout used to specify fragment uniforms, still required even if not used
     VkDescriptorSetLayout descriptorSetLayout;
@@ -172,13 +181,16 @@ private:
     VkDescriptorPool imGuiDescriptorPool;
     std::vector<VkDescriptorSet> descriptorSets; // descriptor set handles
    
+
     // command buffers
     VkCommandPool renderCommandPool;
     std::vector<VkCommandBuffer> renderCommandBuffers;
 
+
     // imgui command buffers
     VkCommandPool imGuiCommandPool;
     std::vector<VkCommandBuffer> imGuiCommandBuffers;
+
 
     // each frame has it's own semaphores
     // semaphores are for GPU-GPU synchronisation
@@ -187,6 +199,7 @@ private:
     // fences are for CPU-GPU synchronisation
     std::vector<VkFence> inFlightFences;
     std::vector<VkFence> imagesInFlight;
+
 
     // keep track of the current frame
     size_t currentFrame = 0;

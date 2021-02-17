@@ -51,16 +51,15 @@ void DuckApplication::run() {
     // initialise vulkan
     initVulkan();
 
+    // initialise imgui
+    initImGui();
+
     // run the main loop
     mainLoop();
 
     // clean up before exiting
     cleanup();
 }
-
-//
-// ImGui Initialisation
-//
 
 //////////////////////
 //
@@ -76,6 +75,7 @@ void DuckApplication::initVulkan() {
     // these do not change over the lifetime of the application
     createDescriptorSetLayout();
     createCommandPool(&renderCommandPool, 0);
+    createCommandPool(&imGuiCommandPool, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 
     // create the swap chain
     swapChainData.initSwapChainData(&vkSetup, &descriptorSetLayout);
@@ -92,15 +92,54 @@ void DuckApplication::initVulkan() {
     createVertexBuffer();
     createIndexBuffer();
 
-
     // these depend on the size of the framebuffer, so create them after 
     createUniformBuffers();
     createDescriptorPool();
     createDescriptorSets();
     createCommandBuffers(&renderCommandBuffers, renderCommandPool);
+    //createImGuiCommandbuffers();
+
+    // record the rendering command buffer once it has been created
+    recordGemoetryCommandBuffer();
 
     // may need to go elsewhere
     createSyncObjects();
+}
+
+//////////////////////
+//
+// ImGui Initialisation
+//
+//////////////////////
+
+void DuckApplication::initImGui() {
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
+    // Setup Dear ImGui style
+    ImGui::StyleColorsDark();
+    //ImGui::StyleColorsClassic();
+
+    // Setup Platform/Renderer backends
+    ImGui_ImplGlfw_InitForVulkan(window, true);
+    ImGui_ImplVulkan_InitInfo init_info = {};
+    init_info.Instance = vkSetup.instance;
+    init_info.PhysicalDevice = vkSetup.physicalDevice;
+    init_info.Device = vkSetup.device;
+    init_info.QueueFamily = QueueFamilyIndices::findQueueFamilies(vkSetup.physicalDevice, vkSetup.surface).graphicsFamily.value();
+    init_info.Queue = vkSetup.graphicsQueue;
+    init_info.PipelineCache = VK_NULL_HANDLE;
+    init_info.DescriptorPool = descriptorPool;
+    init_info.Allocator = nullptr;
+    init_info.MinImageCount = swapChainData.supportDetails.capabilities.minImageCount;
+    init_info.ImageCount = static_cast<uint32_t>(swapChainData.images.size());
+
+    // the imgui render pass
+    ImGui_ImplVulkan_Init(&init_info, swapChainData.imGuiRenderPass);
 }
 
 void DuckApplication::createImGuiRenderPass() {
@@ -144,6 +183,12 @@ void DuckApplication::createImGuiRenderPass() {
     if (vkCreateRenderPass(vkSetup.device, &info, nullptr, &imGuiRenderPass) != VK_SUCCESS) {
         throw std::runtime_error("Could not create Dear ImGui's render pass");
     }
+}
+
+void DuckApplication::uploadFonts() {
+    VkCommandBuffer commandbuffer = utils::beginSingleTimeCommands(&vkSetup.device, imGuiCommandPool);
+    ImGui_ImplVulkan_CreateFontsTexture(commandbuffer);
+    utils::endSingleTimeCommands(&vkSetup.device, &vkSetup.graphicsQueue, &commandbuffer, &imGuiCommandPool);
 }
 
 //////////////////////
@@ -208,19 +253,32 @@ void DuckApplication::createDescriptorSetLayout() {
 void DuckApplication::createDescriptorPool() {
     // descriptor layout describes descriptors that can be bound. Create a descriptor set for each buffer. We need 
     // to create a descriptor pool to get the descriptor set (much like the command pool for command queues)
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
-    // we will allocate one pool for each frame
-    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; // the uniform buffer descriptor
-    poolSizes[0].descriptorCount = static_cast<uint32_t>(swapChainData.images.size());
-    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; // the sampler descriptor
-    poolSizes[1].descriptorCount = static_cast<uint32_t>(swapChainData.images.size());
+
+    // from the ImGUI example function, the pool sizes have a descriptor count of 1000
+    // we also need to allocate one pool for each frame for our descriptors (uniform and texture sampler)
+    uint32_t swapChainImageCount = static_cast<uint32_t>(swapChainData.images.size());
+    VkDescriptorPoolSize poolSizes[] =
+    {
+        { VK_DESCRIPTOR_TYPE_SAMPLER, IMGUI_POOL_NUM },
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, IMGUI_POOL_NUM + swapChainImageCount },
+        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, IMGUI_POOL_NUM },
+        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, IMGUI_POOL_NUM },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, IMGUI_POOL_NUM },
+        { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, IMGUI_POOL_NUM },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, IMGUI_POOL_NUM + swapChainImageCount},
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, IMGUI_POOL_NUM },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, IMGUI_POOL_NUM },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, IMGUI_POOL_NUM },
+        { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, IMGUI_POOL_NUM }
+    };
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size()); // max nb of individual descriptors 
-    poolInfo.pPoolSizes = poolSizes.data(); // the descriptors
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     // the maximum number of descriptor sets that may be allocated
-    poolInfo.maxSets = static_cast<uint32_t>(swapChainData.images.size());
+    poolInfo.maxSets = IMGUI_POOL_NUM * static_cast<uint32_t>(swapChainData.images.size());
+    poolInfo.poolSizeCount = static_cast<uint32_t>(sizeof(poolSizes) / sizeof(VkDescriptorPoolSize)); // max nb of individual descriptor types
+    poolInfo.pPoolSizes = poolSizes; // the descriptors
 
     // create the descirptor pool
     if (vkCreateDescriptorPool(vkSetup.device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
@@ -533,9 +591,11 @@ void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* command
     if (vkAllocateCommandBuffers(vkSetup.device, &allocInfo, commandBuffers->data()) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate command buffers!");
     }
+}
 
+void DuckApplication::recordGemoetryCommandBuffer() {
     // start recording a command buffer 
-    for (size_t i = 0; i < commandBuffers->size(); i++) {
+    for (size_t i = 0; i < renderCommandBuffers.size(); i++) {
         // the following struct used as argument specifying details about the usage of specific command buffer
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -547,7 +607,7 @@ void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* command
 
         // creating implicilty resets the command buffer if it was already recorded once, cannot append
         // commands to a buffer at a later time!
-        if (vkBeginCommandBuffer((*commandBuffers)[i], &beginInfo) != VK_SUCCESS) {
+        if (vkBeginCommandBuffer(renderCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
 
@@ -569,23 +629,23 @@ void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* command
 
         // begin the render pass. All vkCmd functions are void, so error handling occurs at the end
         // first param for all cmd are the command buffer to record command to, second details the render pass we've provided
-        vkCmdBeginRenderPass((*commandBuffers)[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBeginRenderPass(renderCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         // final parameter controls how drawing commands within the render pass will be provided 
         // VK_SUBPASS_CONTENTS_INLINE -> render pass cmd embedded in primary command buffer and no secondary command buffers will be executed
         // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS -> render pass commands executed from secondary command buffers
 
             // bind the graphics pipeline, second param determines if the object is a graphics or compute pipeline
-        vkCmdBindPipeline((*commandBuffers)[i], VK_PIPELINE_BIND_POINT_GRAPHICS, swapChainData.graphicsPipeline);
+        vkCmdBindPipeline(renderCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, swapChainData.graphicsPipeline);
 
         VkBuffer vertexBuffers[] = { vertexBuffer };
         VkDeviceSize offsets[] = { 0 };
         // bind the vertex buffer, can have many vertex buffers
-        vkCmdBindVertexBuffers((*commandBuffers)[i], 0, 1, vertexBuffers, offsets);
+        vkCmdBindVertexBuffers(renderCommandBuffers[i], 0, 1, vertexBuffers, offsets);
         // bind the index buffer, can only have a single index buffer 
         // params (-the nescessary cmd) bufferindex buffer, byte offset into it, type of data
-        vkCmdBindIndexBuffer((*commandBuffers)[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindIndexBuffer(renderCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         // bind the uniform descriptor sets
-        vkCmdBindDescriptorSets((*commandBuffers)[i], VK_PIPELINE_BIND_POINT_GRAPHICS, swapChainData.graphicsPipelineLayout, 0, 1, &descriptorSets[i], 0, nullptr);
+        vkCmdBindDescriptorSets(renderCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, swapChainData.graphicsPipelineLayout, 0, 1, &descriptorSets[i], 0, nullptr);
 
         // command to draw the vertices in the vertex buffer
         //vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0); 
@@ -595,7 +655,7 @@ void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* command
         // first vertex, offset into the vertex buffer. Defines lowest value of gl_VertexIndex
         // first instance, offset for instance rendering. Defines lowest value of gl_InstanceIndex
 
-        vkCmdDrawIndexed((*commandBuffers)[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+        vkCmdDrawIndexed(renderCommandBuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
         // params :
         // the command buffer
         // the indices
@@ -611,10 +671,10 @@ void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* command
             // The advantage is that your data is more cache friendly, because it's closer together. 
 
         // end the render pass
-        vkCmdEndRenderPass((*commandBuffers)[i]);
+        vkCmdEndRenderPass(renderCommandBuffers[i]);
 
         // we've finished recording, so end recording and check for errors
-        if (vkEndCommandBuffer((*commandBuffers)[i]) != VK_SUCCESS) {
+        if (vkEndCommandBuffer(renderCommandBuffers[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
         }
     }
@@ -767,7 +827,13 @@ void DuckApplication::recreateVulkanData() {
     createDescriptorPool();
     createUniformBuffers(); 
     createDescriptorSets();
-    createCommandBuffers(&renderCommandBuffers, renderCommandPool); // directly depend on swap chain images so recreate
+    createCommandBuffers(&renderCommandBuffers, renderCommandPool); 
+
+    // record the rendering command buffer once it has been created
+    recordGemoetryCommandBuffer();
+
+    // update ImGui aswell
+    ImGui_ImplVulkan_SetMinImageCount(static_cast<uint32_t>(swapChainData.images.size()));
 }
 
 void DuckApplication::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
@@ -888,7 +954,13 @@ void DuckApplication::drawFrame() {
     // update the unifrom buffer before submitting
     updateUniformBuffer(imageIndex);
 
-    // info needed to submit the command buffer
+    // update the UI
+    renderUI();
+
+    // the two command buffers, for geometry and UI
+    std::array<VkCommandBuffer, 2> submitCommandBuffers = { renderCommandBuffers[imageIndex], imGuiCommandBuffers[imageIndex] };
+
+    // info needed to submit the command buffers
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     // which semaphores to wait on before execution begins
@@ -900,8 +972,8 @@ void DuckApplication::drawFrame() {
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages; // for each sempahore we provide a wait stage
     // which command buffer to submit to, submit the cmd buffer that binds the swap chain image we acquired as color attachment
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &renderCommandBuffers[imageIndex];
+    submitInfo.commandBufferCount = static_cast<uint32_t>(submitCommandBuffers.size());
+    submitInfo.pCommandBuffers = submitCommandBuffers.data();
 
     // which semaphores to signal once the command buffer(s) has finished, we are using the renderFinishedSemaphore for that
     VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
@@ -946,6 +1018,49 @@ void DuckApplication::drawFrame() {
     // after the ImGui frame is drawn, increment current frame count (% loops around)
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
+
+void DuckApplication::renderUI() {
+    // Start the Dear ImGui frame
+    ImGui_ImplVulkan_NewFrame(); // empty
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    // for now just display the demo window
+    ImGui::ShowDemoWindow();
+
+    //ImGui::Begin("Hello, world!"); // Create a window called "Hello, world!" and append into it.
+    //ImGui::Text("This is some useful text.");
+    //ImGui::End();
+
+    // tell ImGui to render
+    ImGui::Render();
+
+    // start recording into a command buffer
+    VkCommandBufferBeginInfo commandbufferInfo = {};
+    commandbufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    commandbufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(imGuiCommandBuffers[currentFrame], &commandbufferInfo);
+
+    // begin the render pass
+    VkRenderPassBeginInfo renderPassBeginInfo = {};
+    renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassBeginInfo.renderPass = imGuiRenderPass;
+    renderPassBeginInfo.framebuffer = framebufferData.imGuiFramebuffers[currentFrame];
+    renderPassBeginInfo.renderArea.extent.width =  swapChainData.extent.width;
+    renderPassBeginInfo.renderArea.extent.height = swapChainData.extent.height;
+    renderPassBeginInfo.clearValueCount = 1;
+    VkClearValue clearValue{ 0.0f, 0.0f, 0.0f, 0.0f }; // completely opaque clear value
+    renderPassBeginInfo.pClearValues = &clearValue;
+    vkCmdBeginRenderPass(imGuiCommandBuffers[currentFrame], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    // Record Imgui Draw Data and draw funcs into command buffer
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), imGuiCommandBuffers[currentFrame]);
+
+    // Submit command buffer
+    vkCmdEndRenderPass(imGuiCommandBuffers[currentFrame]);
+    vkEndCommandBuffer(imGuiCommandBuffers[currentFrame]);
+}
+
 
 //////////////////////
 //

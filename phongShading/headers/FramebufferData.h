@@ -31,6 +31,8 @@ private:
 
     void createFrameBuffers(const SwapChainData* swapChainData);
 
+    void createImGuiFramebuffers(const SwapChainData* swapChainData);
+
     //////////////////////
     //
     // MEMBER VARIABLES
@@ -46,6 +48,9 @@ public:
 
     // a vector containing all the framebuffers
     std::vector<VkFramebuffer> framebuffers;
+
+    // a vector for the ImGUi framebuffers
+    std::vector<VkFramebuffer> imGuiFramebuffers;
 
     //
     // Depth component

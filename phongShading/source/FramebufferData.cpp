@@ -22,6 +22,7 @@ void FramebufferData::initFramebufferData(VulkanSetup* pVkSetup, const SwapChain
     depthResource.createDepthResource(vkSetup, swapChainData->extent, commandPool);
     // then create the framebuffers
     createFrameBuffers(swapChainData);
+    createImGuiFramebuffers(swapChainData);
 }
 
 void FramebufferData::cleanupFrambufferData() {
@@ -64,6 +65,28 @@ void FramebufferData::createFrameBuffers(const SwapChainData* swapChainData) {
 
         // attempt to create the framebuffer and place in the framebuffer container
         if (vkCreateFramebuffer(vkSetup->device, &framebufferInfo, nullptr, &framebuffers[i]) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create framebuffer!");
+        }
+    }
+}
+
+void FramebufferData::createImGuiFramebuffers(const SwapChainData* swapChainData) {
+    // resize the container to hold all the framebuffers, or image views, in the swap chain
+    imGuiFramebuffers.resize(swapChainData->imageViews.size());
+
+    for (size_t i = 0; i < swapChainData->imageViews.size(); i++)
+    {
+        //VkImageView attachment = swapChainData->imageViews[i];
+        VkFramebufferCreateInfo framebufferInfo = {};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = swapChainData->imGuiRenderPass;
+        framebufferInfo.attachmentCount = 1;
+        framebufferInfo.pAttachments = &swapChainData->imageViews[i]; // only the image view as attachment needed
+        framebufferInfo.width = swapChainData->extent.width;
+        framebufferInfo.height = swapChainData->extent.height;
+        framebufferInfo.layers = 1;
+
+        if (vkCreateFramebuffer(vkSetup->device, &framebufferInfo, nullptr, &imGuiFramebuffers[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to create framebuffer!");
         }
     }

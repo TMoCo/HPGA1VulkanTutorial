@@ -49,6 +49,9 @@ const std::vector<const char*> deviceExtensions = {
 // in flight frames number
 const size_t MAX_FRAMES_IN_FLIGHT = 2;
 
+// the ImGUI number of descriptor pools
+const uint32_t IMGUI_POOL_NUM = 1000;
+
 //////////////////////
 //
 // Debug preprocessor

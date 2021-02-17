@@ -4,16 +4,16 @@
 // QueueFamilyIndices struct
 //
 
-QueueFamilyIndices QueueFamilyIndices::findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface) {
+QueueFamilyIndices QueueFamilyIndices::findQueueFamilies(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
     QueueFamilyIndices indices;
     // similar to physical device and extensions and layers....
     uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
 
     // create a vector to store queue families
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
     // store the queue families in the vector
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
 
     // iterate over queue family properties vector
     int i = 0;
@@ -27,7 +27,7 @@ QueueFamilyIndices QueueFamilyIndices::findQueueFamilies(VkPhysicalDevice device
         // start with false
         VkBool32 presentSupport = false;
         // function checks that device, queuefamily can present on the surface, sets presentSupport to true if so
-        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+        vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &presentSupport);
 
         // check the value in presentSupport
         if (presentSupport) {

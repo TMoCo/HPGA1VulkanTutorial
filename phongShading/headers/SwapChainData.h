@@ -60,6 +60,8 @@ private:
 
     void createRenderPass();
 
+    void createImGuiRenderPass();
+
     //
     // Pipeline creation
     //
@@ -89,17 +91,21 @@ public:
     std::vector<VkImage>     images;
     // a vector containing the views needed to use images in the render pipeline
     std::vector<VkImageView> imageViews;
-    // the image formats
+    // the image format
     VkFormat                 imageFormat;
     // the extent of the swap chain
     VkExtent2D               extent;
+    // swap chain details obtained when creating the swap chain
+    SwapChainSupportDetails  supportDetails;
 
     //
     // Pipeline
     //
 
-    // the render pass
+    // the geometry render pass
     VkRenderPass     renderPass;
+    // the ImGui render pass
+    VkRenderPass     imGuiRenderPass;
     // the layout of the graphics pipeline, for binding descriptor sets
     VkPipelineLayout graphicsPipelineLayout;
     // the graphics pipeline
