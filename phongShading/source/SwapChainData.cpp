@@ -2,9 +2,9 @@
 // Definition of the SwapChain class
 //
 
-#include "../headers/SwapChainData.h" // include the class declaration
-#include "../headers/Shader.h" // include the shader struct 
-#include "../headers/Vertex.h" // include the vertex struct 
+#include <SwapChainData.h>// include the class declaration
+#include <Shader.h>// include the shader struct 
+#include <Vertex.h>
 
 // exceptions
 #include <iostream>
@@ -19,20 +19,17 @@
 void SwapChainData::initSwapChainData(VulkanSetup* pVkSetup, VkDescriptorSetLayout* descriptorSetLayout) {
     // update the pointer to the setup data rather than passing as argument to functions
     vkSetup = pVkSetup;
-    // then create the image views
+    // create the swap chain
+    createSwapChain();
+    // then create the image views for the images created
+    createSwapChainImageViews();
+    // then the render pass 
+    createRenderPass();
+    // followed by the graphics pipeline
+    createGraphicsPipeline(descriptorSetLayout);
 }
 
 void SwapChainData::cleanupSwapChainData() {
-    // destroy the depth image and related data (view and free memory)
-    vkDestroyImageView(vkSetup->device, depthImageView, nullptr);
-    vkDestroyImage(vkSetup->device, depthImage, nullptr);
-    vkFreeMemory(vkSetup->device, depthImageMemory, nullptr);
-
-    // destroy the frame buffers
-    for (size_t i = 0; i < framebuffers.size(); i++) {
-        vkDestroyFramebuffer(vkSetup->device, framebuffers[i], nullptr);
-    }
-
     // destroy pipeline and related data
     vkDestroyPipeline(vkSetup->device, graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(vkSetup->device, graphicsPipelineLayout, nullptr);
@@ -61,7 +58,7 @@ void SwapChainData::createSwapChain() {
     // set the swap chain properties using the above three methods for the format, presentation mode and capabilities
     VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
     VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
-    VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
+    VkExtent2D newExtent = chooseSwapExtent(swapChainSupport.capabilities);
 
     // the number of images we want to put in the swap chain, at least one more image than minimum so we don't have to wait for 
     // driver to complete internal operations before acquiring another image
@@ -80,7 +77,7 @@ void SwapChainData::createSwapChain() {
     createInfo.minImageCount = imageCount;
     createInfo.imageFormat = surfaceFormat.format;
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
-    createInfo.imageExtent = extent;
+    createInfo.imageExtent = newExtent;
     createInfo.imageArrayLayers = 1; // amount of layers each image consists of
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // bit field, specifies types of operations we'll use images in swap chain for
 
@@ -124,7 +121,7 @@ void SwapChainData::createSwapChain() {
 
     // save format and extent
     imageFormat = surfaceFormat.format;
-    extent = extent;
+    extent = newExtent;
 }
 
 SwapChainSupportDetails SwapChainData::querySwapChainSupport() {
@@ -292,7 +289,7 @@ void SwapChainData::createRenderPass() {
 
     // specify a depth attachment to the render pass
     VkAttachmentDescription depthAttachment{};
-    depthAttachment.format = findDepthFormat(); // the same format as the depth image itself
+    depthAttachment.format = DepthResource::findDepthFormat(vkSetup); // the same format as the depth image itself
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -551,105 +548,3 @@ void SwapChainData::createGraphicsPipeline(VkDescriptorSetLayout* descriptorSetL
     vkDestroyShaderModule(vkSetup->device, fragShaderModule, nullptr);
     vkDestroyShaderModule(vkSetup->device, vertShaderModule, nullptr);
 }
-
-//////////////////////
-//
-// The framebuffers
-//
-//////////////////////
-
-void SwapChainData::createFrameBuffers() {
-    // resize the container to hold all the framebuffers, or image views, in the swap chain
-    framebuffers.resize(imageViews.size());
-
-    // now loop over the image views and create the framebuffers, also bind the image to the attachment
-    for (size_t i = 0; i < imageViews.size(); i++) {
-        // get the attachment 
-        std::array<VkImageView, 2> attachments = {
-            imageViews[i],
-            depthImageView
-        };
-
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = renderPass; // which renderpass the framebuffer needs, only one at the moment
-        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size()); // the number of attachments, or VkImageView objects, to bind to the buffer
-        framebufferInfo.pAttachments = attachments.data(); // pointer to the attachment(s)
-        framebufferInfo.width = extent.width; // specify dimensions of framebuffer depending on swapchain dimensions
-        framebufferInfo.height = extent.height;
-        framebufferInfo.layers = 1; // single images so only one layer
-
-        // attempt to create the framebuffer and place in the framebuffer container
-        if (vkCreateFramebuffer(vkSetup->device, &framebufferInfo, nullptr, &framebuffers[i]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create framebuffer!");
-        }
-    }
-}
-
-//////////////////////
-//
-// The framebuffers
-//
-//////////////////////
-
-void SwapChainData::createDepthResources() {
-    // depth image should have the same resolution as the colour attachment, defined by swap chain extent
-    VkFormat depthFormat = findDepthFormat(); // find a depth format
-
-    // we have the information needed to create an image (the format, usage etc) and an image view
-    CreateImageData info{};
-    info.width       = extent.width;
-    info.height      = extent.height;
-    info.format      = depthFormat;
-    info.tiling      = VK_IMAGE_TILING_OPTIMAL;
-    info.usage       = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    info.properties  = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    info.image       = &depthImage;
-    info.imageMemory = &depthImageMemory;
-
-    utils::createImage(&vkSetup->physicalDevice, &vkSetup->device, info);
-    depthImageView = utils::createImageView(&vkSetup->device, depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
-
-    // undefined layout is used as the initial layout as there are no existing depth image contents that matter
-    utils::transitionImageLayout(&vkSetup->device, &vkSetup->graphicsQueue, depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-}
-
-VkFormat SwapChainData::findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
-    // instead of a fixed format, get a list of formats ranked from most to least desirable and iterate through it
-    for (VkFormat format : candidates) {
-        // query the support of the format by the device
-        VkFormatProperties props; // contains three fields
-        // linearTilingFeatures: Use cases that are supported with linear tiling
-        // optimalTilingFeatures: Use cases that are supported with optimal tiling
-        // bufferFeatures : Use cases that are supported for buffer
-        vkGetPhysicalDeviceFormatProperties(vkSetup->physicalDevice, format, &props);
-
-        // test if the format is supported
-        if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
-            return format;
-        }
-        else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) {
-            return format;
-        }
-    }
-    // could either return a special value or throw an exception
-    throw std::runtime_error("failed to find supported format!");
-}
-
-VkFormat SwapChainData::findDepthFormat() {
-    // return a certain depth format if available
-    return findSupportedFormat(
-        // list of candidate formats
-        { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
-        // the desired tiling
-        VK_IMAGE_TILING_OPTIMAL,
-        // the device format properties flag that we want 
-        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
-    );
-}
-
-
-
-
-
-

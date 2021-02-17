@@ -24,10 +24,16 @@
     <ClCompile Include="source\VulkanSetup.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source\Model.cpp">
+    <ClCompile Include="source\SwapChainData.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source\SwapChainData.cpp">
+    <ClCompile Include="source\Utils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\FramebufferData.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\DepthResource.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -41,9 +47,6 @@
     <ClInclude Include="headers\VulkanSetup.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="headers\Model.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="headers\Vertex.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -51,6 +54,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="headers\SwapChainData.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="headers\DepthResource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="headers\FramebufferData.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

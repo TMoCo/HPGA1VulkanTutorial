@@ -10,14 +10,16 @@
 #include <string> // string for model path
 #include <vector> // vector container
 
-#include <vulkan/vulkan_core.h>
+//#include <vulkan/vulkan_core.h>
 
 class Model {
 public:
-	void loadModel(const std::string& path);
+	void loadModelle(const std::string& path);
 
+    //
     // object data
-    // vertex buffer
+    //
+
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
 

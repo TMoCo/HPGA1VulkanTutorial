@@ -1,8 +1,8 @@
 // include class definition
-#include "..\headers\DuckApplication.h"
+#include <DuckApplication.h>
 
 // include constants
-#include "..\headers\Utils.h"
+#include <Utils.h>
 
 // transformations
 #define GLM_FORCE_RADIANS
@@ -73,12 +73,14 @@ void DuckApplication::initVulkan() {
     // create the vulkan core 
     vkSetup.initSetup(window);
 
-    // create the descriptor set layout before the swap chain
+    // create the descriptor set layout and render command pool before the swap chain
+    // these do not change over the lifetime of the application
     createDescriptorSetLayout();
-
-    swapChainData.initSwapChainData(&vkSetup, &descriptorSetLayout);
-
     createCommandPool(&renderCommandPool, 0);
+    // create the swap chain
+    swapChainData.initSwapChainData(&vkSetup, &descriptorSetLayout);
+    // create the frame buffers
+    framebufferData.initFramebufferData(&vkSetup, &swapChainData, renderCommandPool);
 
     // textures can go in a separate class
     createTextureImage();
@@ -89,6 +91,10 @@ void DuckApplication::initVulkan() {
     loadModel();
     createVertexBuffer();
     createIndexBuffer();
+
+    createUniformBuffers();
+    createDescriptorPool();
+    createDescriptorSets();
 
     createCommandBuffers(&renderCommandBuffers, renderCommandPool);
 
@@ -139,11 +145,6 @@ void DuckApplication::createImGuiRenderPass() {
     }
 }
 
-
-bool DuckApplication::hasStencilComponent(VkFormat format) {
-    // simple helper function that returns true if the specified format has a stencil buffer component
-    return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
-}
 
 //
 // Descriptors
@@ -315,7 +316,7 @@ void DuckApplication::createUniformBuffers() {
 
     // loop over the images and create a uniform buffer for each
     for (size_t i = 0; i < swapChainData.images.size(); i++) {
-        createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
+        utils::createBuffer(&vkSetup.device, &vkSetup.physicalDevice, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
     }
 }
 
@@ -386,7 +387,7 @@ void DuckApplication::createCommandPool(VkCommandPool* commandPool, VkCommandPoo
 
 void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* commandBuffers, VkCommandPool& commandPool) {
     // resize the command buffers container to the same size as the frame buffers container
-    commandBuffers->resize(swapChainData.framebuffers.size());
+    commandBuffers->resize(framebufferData.framebuffers.size());
 
     // create the struct
     VkCommandBufferAllocateInfo allocInfo{};
@@ -422,7 +423,7 @@ void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* command
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = swapChainData.renderPass; // handle to the render pass and the attachments to bind
-        renderPassInfo.framebuffer = swapChainData.framebuffers[i]; // the framebuffer created for each swapchain image view
+        renderPassInfo.framebuffer = framebufferData.framebuffers[i]; // the framebuffer created for each swapchain image view
         renderPassInfo.renderArea.offset = { 0, 0 }; // some offset for the render area
         // best performance if same size as attachment
         renderPassInfo.renderArea.extent = swapChainData.extent; // size of the render area (where shaders load and stores occur, pixels outside are undefined)
@@ -487,139 +488,6 @@ void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* command
     }
 }
 
-VkCommandBuffer DuckApplication::beginSingleTimeCommands(VkCommandPool& commandPool) {
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = commandPool;
-    allocInfo.commandBufferCount = 1;
-
-    // allocate the command buffer
-    VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(vkSetup.device, &allocInfo, &commandBuffer);
-
-    // set the struct for the command buffer
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // tell the driver about how the command buffer will be used for optimisation
-
-    // start recording the command buffer
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-    return commandBuffer;
-}
-
-void DuckApplication::endSingleTimeCommands(VkCommandBuffer* commandBuffer, VkCommandPool* commandPool) {
-    // end recording
-    vkEndCommandBuffer(*commandBuffer);
-
-    // execute the command buffer by completing the submitinfo struct
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = commandBuffer;
-
-    // submit the queue for execution
-    vkQueueSubmit(vkSetup.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    // here we could use a fence to schedule multiple transfers simultaneously and wait for them to complete instead
-    // of executing all at the same time, alternatively use wait for the queue to execute
-    vkQueueWaitIdle(vkSetup.graphicsQueue);
-
-    // free the command buffer once the queue is no longer in use
-    vkFreeCommandBuffers(vkSetup.device, *commandPool, 1, commandBuffer);
-}
-
-void DuckApplication::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
-    // copying buffer to image
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands(renderCommandPool);
-    
-    // need to specify which parts of the buffer we are going to copy to which part of the image
-    VkBufferImageCopy region{};
-    
-    // about the buffer area
-    region.bufferOffset = 0; // byte offset after which the pixels start
-    // how pixels are laid out in memory
-    region.bufferRowLength = 0; // 0 = tightly packed
-    region.bufferImageHeight = 0;
-
-    // about the image area, which part of te image we want to copy the pixels
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = 1;
-
-    region.imageOffset = { 0, 0, 0 };
-    region.imageExtent = {
-        width,
-        height,
-        1
-    };
-
-    // buffer to image copy operations are enqueued thus
-    vkCmdCopyBufferToImage(
-        commandBuffer,
-        buffer,
-        image,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, // which layout the image is currently using
-        1,
-        &region
-    );
-    endSingleTimeCommands(&commandBuffer, &renderCommandPool);
-}
-
-void DuckApplication::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, 
-    VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
-    // fill in the corresponding struct
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size; // allocate a buffer of the right size in bytes
-    bufferInfo.usage = usage; // what the data in the buffer is used for
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // buffers can be owned by a single queue or shared between many
-    // bufferInfo.flags = 0; // to configure sparse memory
-
-    // attempt to create a buffer
-    if (vkCreateBuffer(vkSetup.device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create vertex buffer!");
-    }
-
-    // created a buffer, but haven't assigned any memory yet, also get the right memory requirements
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(vkSetup.device, buffer, &memRequirements);
-
-    // allocate the memory for the buffer
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = utils::findMemoryType(&vkSetup.physicalDevice, memRequirements.memoryTypeBits, properties);
-
-    // allocate memory for the buffer. In a real world application, not supposed to actually call vkAllocateMemory for every individual buffer. 
-    // The maximum number of simultaneous memory allocations is limited by the maxMemoryAllocationCount physical device limit. The right way to 
-    // allocate memory for large number of objects at the same time is to create a custom allocator that splits up a single allocation among many 
-    // different objects by using the offset parameters seen in other functions
-    if (vkAllocateMemory(vkSetup.device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate vertex buffer memory!");
-    }
-
-    // associate memory with buffer
-    vkBindBufferMemory(vkSetup.device, buffer, bufferMemory, 0);
-}
-
-void DuckApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
-    // memory transfer operations are executed using command buffers, like drawing commands. We need to allocate a temporary command buffer
-    // could use a command pool for these short lived operations using the flag VK_COMMAND_POOL_CREATE_TRANSIENT_BIT 
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands(renderCommandPool);
-
-    // defines the region of 
-    VkBufferCopy copyRegion{};
-    // offsets in the source and destination, we may want to keep certain values
-    copyRegion.srcOffset = 0; 
-    copyRegion.dstOffset = 0; 
-    copyRegion.size = size; // can't be VK_WHOLE_SIZE here like vkMapMemory
-    vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
-
-    endSingleTimeCommands(&commandBuffer, &renderCommandPool);
-}
-
 //
 // model
 //
@@ -676,7 +544,7 @@ void DuckApplication::createVertexBuffer() {
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
     // in host memory (cpu)
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+    utils::createBuffer(&vkSetup.device, &vkSetup.physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
     // VK_BUFFER_USAGE_TRANSFER_SRC_BIT: Buffer can be used as source in a memory transfer operation.
 
     void* data;
@@ -690,9 +558,9 @@ void DuckApplication::createVertexBuffer() {
     // or call vkFlushMappedMemoryRanges after writing to mapped memory, and call vkInvalidateMappedMemoryRanges before reading from the mapped memory
 
     // create the vertex buffer, now the memory is device local (faster)
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
+    utils::createBuffer(&vkSetup.device, &vkSetup.physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
     // VK_BUFFER_USAGE_TRANSFER_DST_BIT: Buffer can be used as destination in a memory transfer operation
-    copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+    utils::copyBuffer(&vkSetup.device, &vkSetup.graphicsQueue, renderCommandPool, stagingBuffer, vertexBuffer, bufferSize);
 
     // cleanup after using the staging buffer
     vkDestroyBuffer(vkSetup.device, stagingBuffer, nullptr);
@@ -705,7 +573,7 @@ void DuckApplication::createIndexBuffer() {
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+    utils::createBuffer(&vkSetup.device, &vkSetup.physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
     void* data;
     vkMapMemory(vkSetup.device, stagingBufferMemory, 0, bufferSize, 0, &data);
@@ -713,9 +581,9 @@ void DuckApplication::createIndexBuffer() {
     vkUnmapMemory(vkSetup.device, stagingBufferMemory);
 
     // different usage bit flag VK_BUFFER_USAGE_INDEX_BUFFER_BIT instead of VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
+    utils::createBuffer(&vkSetup.device, &vkSetup.physicalDevice,bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
 
-    copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+    utils::copyBuffer(&vkSetup.device, &vkSetup.graphicsQueue, renderCommandPool, stagingBuffer, indexBuffer, bufferSize);
 
     vkDestroyBuffer(vkSetup.device, stagingBuffer, nullptr);
     vkFreeMemory(vkSetup.device, stagingBufferMemory, nullptr);
@@ -742,7 +610,7 @@ void DuckApplication::createTextureImage() {
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
 
-    createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+    utils::createBuffer(&vkSetup.device, &vkSetup.physicalDevice, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         stagingBuffer, stagingBufferMemory);
 
     // directly copy the pixels in the array from the image loading library to the buffer
@@ -755,97 +623,42 @@ void DuckApplication::createTextureImage() {
     stbi_image_free(pixels);
 
     // now create the image
-    createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory);
+    CreateImageData info{};
+    info.width = texWidth;
+    info.height = texHeight;
+    info.format = VK_FORMAT_R8G8B8A8_SRGB;
+    info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    info.usage = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    info.properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    info.image = &textureImage;
+    info.imageMemory = &textureImageMemory;
+    utils::createImage(&vkSetup.device, &vkSetup.physicalDevice, info);
 
     // next step is to copy the staging buffer to the texture image using our helper functions
-    transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL); // specify the initial layout VK_IMAGE_LAYOUT_UNDEFINED
-    copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+    TransitionImageLayoutData transitionData{};
+    transitionData.image = &textureImage;
+    transitionData.renderCommandPool = renderCommandPool;
+    transitionData.format = VK_FORMAT_R8G8B8A8_SRGB;
+    transitionData.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    transitionData.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    utils::transitionImageLayout(&vkSetup.device, &vkSetup.graphicsQueue, transitionData); // specify the initial layout VK_IMAGE_LAYOUT_UNDEFINED
+    utils::copyBufferToImage(&vkSetup.device, &vkSetup.graphicsQueue, renderCommandPool, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
     // need another transfer to give the shader access to the texture
-    transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    transitionData.image = &textureImage;
+    transitionData.renderCommandPool = renderCommandPool;
+    transitionData.format = VK_FORMAT_R8G8B8A8_SRGB;
+    transitionData.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    transitionData.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    utils::transitionImageLayout(&vkSetup.device, &vkSetup.graphicsQueue, transitionData);
 
     // cleanup the staging buffer and its memory
     vkDestroyBuffer(vkSetup.device, stagingBuffer, nullptr);
     vkFreeMemory(vkSetup.device, stagingBufferMemory, nullptr);
 }
 
-void DuckApplication::createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
-    VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory) {
-    // create the struct for creating an image
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D; // coordinate system of the texels
-    imageInfo.extent.width = width; // the dimensions of the image
-    imageInfo.extent.height = height;
-    imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1; // no mip mapping yet
-    imageInfo.arrayLayers = 1; // not in array yet
-    imageInfo.format = format; // same format as the pixels is best
-    imageInfo.tiling = tiling; // tiling of the pixels, let vulkan lay them out
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = usage; // same semantics as during buffer creation, here as destination for the buffer copy
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT; // for multisampling
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // used by a single queue family
-    imageInfo.flags = 0; // Optional, for sparse data
-
-    // create the image. The hardware could fail for the format we have specified. We should have a list of acceptable formats and choose the best one depending
-    // on the selection of formats supported by the device
-    if (vkCreateImage(vkSetup.device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create image!");
-    }
-
-    // allocate memory for an image, similar to a buffer allocation
-    VkMemoryRequirements memRequirements;
-    vkGetImageMemoryRequirements(vkSetup.device, image, &memRequirements);
-
-    // info on the allocation
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = utils::findMemoryType(&vkSetup.physicalDevice, memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-    // attempt to create an image
-    if (vkAllocateMemory(vkSetup.device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate image memory!");
-    }
-
-    // associate the memory to the image
-    vkBindImageMemory(vkSetup.device, image, imageMemory, 0);
-}
-
 void DuckApplication::createTextureImageView() {
     // just like we need views for the swap chain images, so do we need a view for the texture image view
-    textureImageView = createImageView(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
-}
-
-VkImageView DuckApplication::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) {
-    // helper function for creating image views with a specific format
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = image; // different image, should refer to the texture
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // image as 1/2/3D textures and cube maps
-    viewInfo.format = format;// how the image data should be interpreted
-    // lets us swizzle colour channels around (here there is no swizzle)
-    viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-    viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-    viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-    viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-    // describe what the image purpose is
-    viewInfo.subresourceRange.aspectMask = aspectFlags;
-    // and what part of the image we want
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
-
-    // attemp to create the image view
-    VkImageView imageView;
-    if (vkCreateImageView(vkSetup.device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create texture image view!");
-    }
-
-    // and return the image view
-    return imageView;
+    textureImageView = utils::createImageView(&vkSetup.device, textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
 //

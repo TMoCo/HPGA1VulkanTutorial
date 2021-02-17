@@ -5,9 +5,10 @@
 #ifndef DUCK_APPLICATION_H
 #define DUCK_APPLICATION_H
 
-#include "../headers/VulkanSetup.h" // include the vulkan setup class
-#include "../headers/Vertex.h" // the vertex struct
-#include "../headers/SwapChainData.h" // the swap chain class
+#include <Vertex.h> // the vertex struct
+#include <VulkanSetup.h> // include the vulkan setup class
+#include <SwapChainData.h> // the swap chain class
+#include <FramebufferData.h> // the framebuffer data class
 
 // glfw window library
 #define GLFW_INCLUDE_VULKAN
@@ -60,8 +61,6 @@ private:
 
     void createImGuiRenderPass();
 
-    bool hasStencilComponent(VkFormat format);
-
     //--------------------------------------------------------------------//
 
     void createDescriptorSetLayout();
@@ -82,19 +81,6 @@ private:
 
     void createCommandBuffers(std::vector<VkCommandBuffer>* commandBuffers, VkCommandPool& commandPool);
 
-    VkCommandBuffer beginSingleTimeCommands(VkCommandPool& commandBuffer);
-
-    void endSingleTimeCommands(VkCommandBuffer* commandBuffer, VkCommandPool* commandPool);
-
-    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
-
-    void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
-
-    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, 
-        VkBuffer& buffer, VkDeviceMemory& bufferMemory);
-
-    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
-
     //--------------------------------------------------------------------//
     
     void loadModel(); 
@@ -108,12 +94,6 @@ private:
     void createTextureImage();
 
     void createTextureImageView();
-
-    void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, 
-        VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
-    
-    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
-
 
     //--------------------------------------------------------------------//
 
@@ -160,6 +140,9 @@ private:
     // the swap chain and related data
     SwapChainData swapChainData;
 
+    // the frame buffer and related data
+    FramebufferData framebufferData;
+
     // object data
     // vertex buffer
     std::vector<Vertex> vertices;
@@ -182,7 +165,6 @@ private:
 
     // the imgui render pass
     VkRenderPass imGuiRenderPass;
-
 
     // layout used to specify fragment uniforms, still required even if not used
     VkDescriptorSetLayout descriptorSetLayout;

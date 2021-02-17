@@ -8,6 +8,7 @@
 #define VULKAN_SWAP_CHAIN_H
 
 #include "VulkanSetup.h" // for referencing the device
+#include "DepthResource.h" // for referencing the depth resource
 
 #include <vector> // vector container
 
@@ -66,25 +67,8 @@ private:
     void createGraphicsPipeline(VkDescriptorSetLayout* descriptorSetLayout);
 
     //
-    // Framebuffers creation
+    // Command pool creation
     //
-
-    void createFrameBuffers();
-
-    //
-    // Depth resources 
-    //
-
-    void createDepthResources();
-
-    VkFormat findDepthFormat();
-
-
-    //
-    // Helper functions
-    //
-
-    VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 
     //////////////////////
     //
@@ -96,41 +80,30 @@ public:
     // a reference to the vulkan setup (instance, devices, surface)
     VulkanSetup* vkSetup;
 
-    // the swap chain
-    VkSwapchainKHR swapChain;
+    //
+    // The swap chain
+    //
 
+    VkSwapchainKHR           swapChain;
     // the swap chain images
-    std::vector<VkImage> images;
-
-    // the image formats
-    VkFormat imageFormat;
-
-    // the extent of the swap chain
-    VkExtent2D extent;
-
+    std::vector<VkImage>     images;
     // a vector containing the views needed to use images in the render pipeline
     std::vector<VkImageView> imageViews;
+    // the image formats
+    VkFormat                 imageFormat;
+    // the extent of the swap chain
+    VkExtent2D               extent;
 
-    // a vector containing all the framebuffers
-    std::vector<VkFramebuffer> framebuffers;
+    //
+    // Pipeline
+    //
 
     // the render pass
-    VkRenderPass renderPass;
-
+    VkRenderPass     renderPass;
     // the layout of the graphics pipeline, for binding descriptor sets
     VkPipelineLayout graphicsPipelineLayout;
-
     // the graphics pipeline
-    VkPipeline graphicsPipeline;
-
-    // depth image
-    VkImage depthImage;
-
-    // the depth image's view for interfacing
-    VkImageView depthImageView;
-
-    // the memory containing the depth image data
-    VkDeviceMemory depthImageMemory;
+    VkPipeline       graphicsPipeline;
 };
 
 #endif // !VULKAN_SWAP_CHAIN_H

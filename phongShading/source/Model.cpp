@@ -1,11 +1,11 @@
-#include "../headers/Model.h"
+#include <Model.h>
 
 // model loading
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
 
-void Model::loadModel(const std::string& path) {
+void Model::loadModelle(const std::string& path) {
     // setup variables to get model info
     tinyobj::attrib_t attrib; // contains all the positions, normals, textures and faces
     std::vector<tinyobj::shape_t> shapes; // all the separate objects and their faces

@@ -13,7 +13,7 @@
 #define VULKAN_SETUP_H
 
 // constants and structs
-#include "../headers/Utils.h"
+#include "Utils.h"
 
 // vulkan definitions
 #include <vulkan/vk_platform.h>

@@ -3,7 +3,7 @@
 //
 
 // include the class declaration
-#include "../headers/VulkanSetup.h"
+#include <VulkanSetup.h>
 
 // glfw window library
 #define GLFW_INCLUDE_VULKAN

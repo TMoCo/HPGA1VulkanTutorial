@@ -12,7 +12,7 @@
 #include <cstdlib>
 
 // include the application definition
-#include "../headers/DuckApplication.h"
+#include <DuckApplication.h>
 
 
 int main() {
