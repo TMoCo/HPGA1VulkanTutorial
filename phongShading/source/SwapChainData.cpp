@@ -281,7 +281,7 @@ void SwapChainData::createRenderPass() {
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     // textures and framebuffers are VkImages with certain pixel formats, but layout in memory can change based on image use
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // layout before render pass begins (we don't care, not guaranteed to be preserved)
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // layout to transition to post render pass (image should be ready for drawing over by imgui)
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // layout to transition to post render pass (image should be ready for drawing over by imgui)
     // common layouts
     // VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL: Images used as color attachment
     // VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : Images to be presented in the swap chain

@@ -38,10 +38,11 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 
-
+//////////////////////
 //
-// Run application
+// Run the application
 //
+//////////////////////
 
 void DuckApplication::run() {
     // initialise a glfw window
@@ -49,9 +50,6 @@ void DuckApplication::run() {
 
     // initialise vulkan
     initVulkan();
-
-    // initialise ImGui
-    //initImGui();
 
     // run the main loop
     mainLoop();
@@ -64,10 +62,11 @@ void DuckApplication::run() {
 // ImGui Initialisation
 //
 
-
+//////////////////////
 //
-// Vulkan Initialisation
+// Initialise vulkan
 //
+//////////////////////
 
 void DuckApplication::initVulkan() {
     // create the vulkan core 
@@ -77,6 +76,7 @@ void DuckApplication::initVulkan() {
     // these do not change over the lifetime of the application
     createDescriptorSetLayout();
     createCommandPool(&renderCommandPool, 0);
+
     // create the swap chain
     swapChainData.initSwapChainData(&vkSetup, &descriptorSetLayout);
     // create the frame buffers
@@ -92,15 +92,16 @@ void DuckApplication::initVulkan() {
     createVertexBuffer();
     createIndexBuffer();
 
+
+    // these depend on the size of the framebuffer, so create them after 
     createUniformBuffers();
     createDescriptorPool();
     createDescriptorSets();
-
     createCommandBuffers(&renderCommandBuffers, renderCommandPool);
 
+    // may need to go elsewhere
     createSyncObjects();
 }
-
 
 void DuckApplication::createImGuiRenderPass() {
     // creat the ImGui render pass
@@ -145,6 +146,27 @@ void DuckApplication::createImGuiRenderPass() {
     }
 }
 
+//////////////////////
+//
+// Initialise GLFW
+//
+//////////////////////
+
+void DuckApplication::initWindow() {
+    // initialise glfw library
+    glfwInit();
+
+    // set parameters
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // initially for opengl, so tell it not to create opengl context
+    //glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // disable resizing for now
+
+    // create the window, 4th param refs a monitor, 5th param is opengl related
+    window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+
+    // store an arbitrary pointer to a glfwwindow because glfw does not know how to call member function from a ptr to an instance of this class
+    glfwSetWindowUserPointer(window, this);
+    glfwSetFramebufferSizeCallback(window, framebufferResizeCallback); // tell the window what the call back for resizing is
+}
 
 //
 // Descriptors
@@ -306,18 +328,82 @@ void DuckApplication::createDescriptorSets() {
     }
 }
 
-void DuckApplication::createUniformBuffers() {
-    // specify what the size of the buffer is
-    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+//////////////////////
+// 
+// Textures and uniforms
+//
+//////////////////////
 
-    // resize the uniform buffer to be as big as the swap chain, each image has its own se of uniforms
-    uniformBuffers.resize(swapChainData.images.size());
-    uniformBuffersMemory.resize(swapChainData.images.size());
+//
+// Textures
+//
 
-    // loop over the images and create a uniform buffer for each
-    for (size_t i = 0; i < swapChainData.images.size(); i++) {
-        utils::createBuffer(&vkSetup.device, &vkSetup.physicalDevice, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
+void DuckApplication::createTextureImage() {
+    // uses command buffer so should be called after create command pool
+    int texWidth, texHeight, texChannels;
+
+    // load the file 
+    // forces image to be loaded with an alpha channel, returns ptr to first element in an array of pixels
+    stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha); 
+    // laid out row by row with 4 bytes by pixel in case of STBI_rgb_alpha
+    VkDeviceSize imageSize = texWidth * texHeight * 4;
+    if (!pixels) {
+        throw std::runtime_error("failed to load texture image!");
     }
+
+    // create a staging buffer in host visible memory so we can map it, not device memory although that is our destination
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+
+    utils::createBuffer(&vkSetup.device, &vkSetup.physicalDevice, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        stagingBuffer, stagingBufferMemory);
+
+    // directly copy the pixels in the array from the image loading library to the buffer
+    void* data;
+    vkMapMemory(vkSetup.device, stagingBufferMemory, 0, imageSize, 0, &data);
+    memcpy(data, pixels, static_cast<size_t>(imageSize));
+    vkUnmapMemory(vkSetup.device, stagingBufferMemory);
+
+    // and cleanup pixels after copying in the data
+    stbi_image_free(pixels);
+
+    // now create the image
+    CreateImageData info{};
+    info.width = texWidth;
+    info.height = texHeight;
+    info.format = VK_FORMAT_R8G8B8A8_SRGB;
+    info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    info.usage = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    info.properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    info.image = &textureImage;
+    info.imageMemory = &textureImageMemory;
+    utils::createImage(&vkSetup.device, &vkSetup.physicalDevice, info);
+
+    // next step is to copy the staging buffer to the texture image using our helper functions
+    TransitionImageLayoutData transitionData{};
+    transitionData.image = &textureImage;
+    transitionData.renderCommandPool = renderCommandPool;
+    transitionData.format = VK_FORMAT_R8G8B8A8_SRGB;
+    transitionData.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    transitionData.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    utils::transitionImageLayout(&vkSetup.device, &vkSetup.graphicsQueue, transitionData); // specify the initial layout VK_IMAGE_LAYOUT_UNDEFINED
+    utils::copyBufferToImage(&vkSetup.device, &vkSetup.graphicsQueue, renderCommandPool, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+    // need another transfer to give the shader access to the texture
+    transitionData.image = &textureImage;
+    transitionData.renderCommandPool = renderCommandPool;
+    transitionData.format = VK_FORMAT_R8G8B8A8_SRGB;
+    transitionData.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    transitionData.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    utils::transitionImageLayout(&vkSetup.device, &vkSetup.graphicsQueue, transitionData);
+
+    // cleanup the staging buffer and its memory
+    vkDestroyBuffer(vkSetup.device, stagingBuffer, nullptr);
+    vkFreeMemory(vkSetup.device, stagingBufferMemory, nullptr);
+}
+
+void DuckApplication::createTextureImageView() {
+    // just like we need views for the swap chain images, so do we need a view for the texture image view
+    textureImageView = utils::createImageView(&vkSetup.device, textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
 void DuckApplication::createTextureSampler() {
@@ -361,8 +447,54 @@ void DuckApplication::createTextureSampler() {
 }
 
 //
-// Buffers (command, frame) setup
+// Uniforms
 //
+
+void DuckApplication::createUniformBuffers() {
+    // specify what the size of the buffer is
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+    // resize the uniform buffer to be as big as the swap chain, each image has its own se of uniforms
+    uniformBuffers.resize(swapChainData.images.size());
+    uniformBuffersMemory.resize(swapChainData.images.size());
+
+    // loop over the images and create a uniform buffer for each
+    for (size_t i = 0; i < swapChainData.images.size(); i++) {
+        utils::createBuffer(&vkSetup.device, &vkSetup.physicalDevice, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
+    }
+}
+
+void DuckApplication::updateUniformBuffer(uint32_t currentImage) {
+    // compute the time elapsed since rendering began
+    static auto startTime = std::chrono::high_resolution_clock::now();
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    UniformBufferObject ubo{};
+    // translate the model in the positive z axis
+    ubo.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -30.0f, -85.0f));
+    ubo.model = glm::rotate(ubo.model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    // a simple rotation around the z axis
+    ubo.model = glm::rotate(ubo.model, time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // make the camera view the geometry from above at a 45° angle (eye pos, subject pos, up direction)
+    ubo.view = glm::mat4(1.0f); //glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // proect the scene with a 45° fov, use current swap chain extent to compute aspect ratio, near, far
+    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainData.extent.width / (float)swapChainData.extent.height, 0.1f, 100.0f);
+    // designed for openGL, so y coordinates are inverted
+    ubo.proj[1][1] *= -1;
+
+    // copy the uniform buffer object into the uniform buffer
+    void* data;
+    vkMapMemory(vkSetup.device, uniformBuffersMemory[currentImage], 0, sizeof(ubo), 0, &data);
+    memcpy(data, &ubo, sizeof(ubo));
+    vkUnmapMemory(vkSetup.device, uniformBuffersMemory[currentImage]);
+}
+
+//////////////////////
+//
+// Command buffers setup
+//
+//////////////////////
 
 void DuckApplication::createCommandPool(VkCommandPool* commandPool, VkCommandPoolCreateFlags flags) {
     // submit command buffers by submitting to one of the device queues, like graphics and presentation
@@ -488,9 +620,11 @@ void DuckApplication::createCommandBuffers(std::vector<VkCommandBuffer>* command
     }
 }
 
+//////////////////////
 //
-// model
+// Model loading an VB/IB setup
 //
+//////////////////////
 
 void DuckApplication::loadModel() {
     // setup variables to get model info
@@ -589,83 +723,13 @@ void DuckApplication::createIndexBuffer() {
     vkFreeMemory(vkSetup.device, stagingBufferMemory, nullptr);
 }
 
+//////////////////////
 //
-// Textures
+// Handling window resize events
 //
+//////////////////////
 
-void DuckApplication::createTextureImage() {
-    // uses command buffer so should be called after create command pool
-    int texWidth, texHeight, texChannels;
-
-    // load the file 
-    // forces image to be loaded with an alpha channel, returns ptr to first element in an array of pixels
-    stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha); 
-    // laid out row by row with 4 bytes by pixel in case of STBI_rgb_alpha
-    VkDeviceSize imageSize = texWidth * texHeight * 4;
-    if (!pixels) {
-        throw std::runtime_error("failed to load texture image!");
-    }
-
-    // create a staging buffer in host visible memory so we can map it, not device memory although that is our destination
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-
-    utils::createBuffer(&vkSetup.device, &vkSetup.physicalDevice, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        stagingBuffer, stagingBufferMemory);
-
-    // directly copy the pixels in the array from the image loading library to the buffer
-    void* data;
-    vkMapMemory(vkSetup.device, stagingBufferMemory, 0, imageSize, 0, &data);
-    memcpy(data, pixels, static_cast<size_t>(imageSize));
-    vkUnmapMemory(vkSetup.device, stagingBufferMemory);
-
-    // and cleanup pixels after copying in the data
-    stbi_image_free(pixels);
-
-    // now create the image
-    CreateImageData info{};
-    info.width = texWidth;
-    info.height = texHeight;
-    info.format = VK_FORMAT_R8G8B8A8_SRGB;
-    info.tiling = VK_IMAGE_TILING_OPTIMAL;
-    info.usage = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    info.properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    info.image = &textureImage;
-    info.imageMemory = &textureImageMemory;
-    utils::createImage(&vkSetup.device, &vkSetup.physicalDevice, info);
-
-    // next step is to copy the staging buffer to the texture image using our helper functions
-    TransitionImageLayoutData transitionData{};
-    transitionData.image = &textureImage;
-    transitionData.renderCommandPool = renderCommandPool;
-    transitionData.format = VK_FORMAT_R8G8B8A8_SRGB;
-    transitionData.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    transitionData.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    utils::transitionImageLayout(&vkSetup.device, &vkSetup.graphicsQueue, transitionData); // specify the initial layout VK_IMAGE_LAYOUT_UNDEFINED
-    utils::copyBufferToImage(&vkSetup.device, &vkSetup.graphicsQueue, renderCommandPool, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
-    // need another transfer to give the shader access to the texture
-    transitionData.image = &textureImage;
-    transitionData.renderCommandPool = renderCommandPool;
-    transitionData.format = VK_FORMAT_R8G8B8A8_SRGB;
-    transitionData.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    transitionData.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    utils::transitionImageLayout(&vkSetup.device, &vkSetup.graphicsQueue, transitionData);
-
-    // cleanup the staging buffer and its memory
-    vkDestroyBuffer(vkSetup.device, stagingBuffer, nullptr);
-    vkFreeMemory(vkSetup.device, stagingBufferMemory, nullptr);
-}
-
-void DuckApplication::createTextureImageView() {
-    // just like we need views for the swap chain images, so do we need a view for the texture image view
-    textureImageView = utils::createImageView(&vkSetup.device, textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
-}
-
-//
-// Swap chain and surface setup
-//
-
-void DuckApplication::recreateSwapChain() {
+void DuckApplication::recreateVulkanData() {
     // for handling window minimisation, we get the size of the windo through the glfw framebuffer dimensions
     int width = 0, height = 0;
     glfwGetFramebufferSize(window, &width, &height);
@@ -677,28 +741,47 @@ void DuckApplication::recreateSwapChain() {
         glfwWaitEvents();
     }
 
-    // wait before touching if in use by the device
+    // wait before destroying if in use by the device
     vkDeviceWaitIdle(vkSetup.device);
+    
+    // destroy whatever is dependent on the old swap chain
+    vkFreeCommandBuffers(vkSetup.device, renderCommandPool, static_cast<uint32_t>(renderCommandBuffers.size()), renderCommandBuffers.data());
+    // also destroy the uniform buffers that worked with the swap chain
+    for (size_t i = 0; i < swapChainData.images.size(); i++) {
+        vkDestroyBuffer(vkSetup.device, uniformBuffers[i], nullptr);
+        vkFreeMemory(vkSetup.device, uniformBuffersMemory[i], nullptr);
+    }
 
-    createDescriptorSets();
-    // destroy the previous swap chain
+    // cleanup the descriptor pools and descriptor sets
+    vkDestroyDescriptorPool(vkSetup.device, imGuiDescriptorPool, nullptr);
+    vkDestroyDescriptorPool(vkSetup.device, descriptorPool, nullptr);
+
+    // destroy the framebuffer data, followed by the swap chain data
+    framebufferData.cleanupFrambufferData();
     swapChainData.cleanupSwapChainData();
 
-    // recreate it
+    // recreate them
     swapChainData.initSwapChainData(&vkSetup, &descriptorSetLayout);
+    framebufferData.initFramebufferData(&vkSetup, &swapChainData, renderCommandPool);
 
-    createUniformBuffers(); // depends on swap chain size so recreate
     createDescriptorPool();
-    //createImGuiDescriptorPool();
+    createUniformBuffers(); 
+    createDescriptorSets();
     createCommandBuffers(&renderCommandBuffers, renderCommandPool); // directly depend on swap chain images so recreate
-
-    // tell ImGui to update the swap chain information
-    //ImGui_ImplVulkan_SetMinImageCount(static_cast<uint32_t>(swapChainImages.size()));
 }
 
+void DuckApplication::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+    // pointer to this application class obtained from glfw, it doesnt know that it is a DuckApplication but we do so we can cast to it
+    auto app = reinterpret_cast<DuckApplication*>(glfwGetWindowUserPointer(window));
+    // and set the resize flag to true
+    app->framebufferResized = true;
+}
+
+//////////////////////
 //
 // Synchronisation
 //
+//////////////////////
 
 void DuckApplication::createSyncObjects() {
     // resize the semaphores to the number of simultaneous frames, each has its own semaphores
@@ -726,9 +809,11 @@ void DuckApplication::createSyncObjects() {
     }
 }
 
+//////////////////////
 //
-// Main loop and drawing
+// Main loop 
 //
+//////////////////////
 
 void DuckApplication::mainLoop() {
     // loop keeps window open
@@ -753,6 +838,12 @@ void DuckApplication::mainLoop() {
     }
     vkDeviceWaitIdle(vkSetup.device);
 }
+
+//////////////////////
+//
+// Frame drawing
+//
+//////////////////////
 
 void DuckApplication::drawFrame() {
     // will acquire an image from swap chain, exec commands in command buffer with images as attachments in the frameBuffer
@@ -780,7 +871,7 @@ void DuckApplication::drawFrame() {
     // Vulkan tells us if the swap chain is out of date with this result value (the swap chain is incompatible with the surface, eg window resize)
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         // if so then recreate the swap chain and try to acquire the image from the new swap chain
-        recreateSwapChain();
+        recreateVulkanData();
         return; // return to acquire the image again
     }
     else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) { // both values here are considered "success", even if partial, values
@@ -846,7 +937,7 @@ void DuckApplication::drawFrame() {
     // similar to when acquiring the swap chain image, check that the presentation queue can accept the image, also check for resizing
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
         framebufferResized = false;
-        recreateSwapChain();
+        recreateVulkanData();
     }
     else if (result != VK_SUCCESS) {
         throw std::runtime_error("failed to present swap chain image!");
@@ -856,39 +947,29 @@ void DuckApplication::drawFrame() {
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void DuckApplication::updateUniformBuffer(uint32_t currentImage) {
-    // compute the time elapsed since rendering began
-    static auto startTime = std::chrono::high_resolution_clock::now();
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-
-    UniformBufferObject ubo{};
-    // translate the model in the positive z axis
-    ubo.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -30.0f, -85.0f));
-    ubo.model = glm::rotate(ubo.model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    // a simple rotation around the z axis
-    ubo.model = glm::rotate(ubo.model, time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    // make the camera view the geometry from above at a 45° angle (eye pos, subject pos, up direction)
-    ubo.view = glm::mat4(1.0f); //glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    // proect the scene with a 45° fov, use current swap chain extent to compute aspect ratio, near, far
-    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainData.extent.width / (float)swapChainData.extent.height, 0.1f, 100.0f);
-    // designed for openGL, so y coordinates are inverted
-    ubo.proj[1][1] *= -1;
-
-    // copy the uniform buffer object into the uniform buffer
-    void* data;
-    vkMapMemory(vkSetup.device, uniformBuffersMemory[currentImage], 0, sizeof(ubo), 0, &data);
-    memcpy(data, &ubo, sizeof(ubo));
-    vkUnmapMemory(vkSetup.device, uniformBuffersMemory[currentImage]);
-}
-
+//////////////////////
 //
 // Cleanup
 //
+//////////////////////
 
 void DuckApplication::cleanup() {
 
-    // call the function we created for destroying the swap chain
+    // destroy whatever is dependent on the old swap chain
+    vkFreeCommandBuffers(vkSetup.device, renderCommandPool, static_cast<uint32_t>(renderCommandBuffers.size()), renderCommandBuffers.data());
+    // also destroy the uniform buffers that worked with the swap chain
+    for (size_t i = 0; i < swapChainData.images.size(); i++) {
+        vkDestroyBuffer(vkSetup.device, uniformBuffers[i], nullptr);
+        vkFreeMemory(vkSetup.device, uniformBuffersMemory[i], nullptr);
+    }
+
+    // cleanup the descriptor pools and descriptor sets
+    vkDestroyDescriptorPool(vkSetup.device, imGuiDescriptorPool, nullptr);
+    vkDestroyDescriptorPool(vkSetup.device, descriptorPool, nullptr);
+
+    // call the function we created for destroying the swap chain and frame buffers
+    // in the reverse order of their creation
+    framebufferData.cleanupFrambufferData();
     swapChainData.cleanupSwapChainData();
 
     // destroy the texture image view and sampler
@@ -928,29 +1009,3 @@ void DuckApplication::cleanup() {
     glfwTerminate();
 }
 
-//
-// GLFW
-//
-
-void DuckApplication::initWindow() {
-    // initialise glfw library
-    glfwInit();
-
-    // set parameters
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // initially for opengl, so tell it not to create opengl context
-    //glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // disable resizing for now
-
-    // create the window, 4th param refs a monitor, 5th param is opengl related
-    window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
-
-    // store an arbitrary pointer to a glfwwindow because glfw does not know how to call member function from a ptr to an instance of this class
-    glfwSetWindowUserPointer(window, this);
-    glfwSetFramebufferSizeCallback(window, framebufferResizeCallback); // tell the window what the call back for resizing is
-}
-
-void DuckApplication::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-    // pointer to this application class obtained from glfw, it doesnt know that it is a DuckApplication but we do so we can cast to it
-    auto app = reinterpret_cast<DuckApplication*>(glfwGetWindowUserPointer(window));
-    // and set the resize flag to true
-    app->framebufferResized = true;
-}

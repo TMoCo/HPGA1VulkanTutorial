@@ -97,7 +97,7 @@ private:
 
     //--------------------------------------------------------------------//
 
-    void recreateSwapChain();
+    void recreateVulkanData();
 
     //--------------------------------------------------------------------//
 
@@ -187,6 +187,7 @@ private:
     // fences are for CPU-GPU synchronisation
     std::vector<VkFence> inFlightFences;
     std::vector<VkFence> imagesInFlight;
+
     // keep track of the current frame
     size_t currentFrame = 0;
     bool framebufferResized = false;

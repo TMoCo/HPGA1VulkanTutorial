@@ -15,15 +15,24 @@
 //
 //////////////////////
 
-void FramebufferData::initFramebufferData(const VulkanSetup* vkSetup, const SwapChainData* swapChainData, const VkCommandPool& commandPool) {
+void FramebufferData::initFramebufferData(VulkanSetup* pVkSetup, const SwapChainData* swapChainData, const VkCommandPool& commandPool) {
+    // update the pointer to the setup data rather than passing as argument to functions
+    vkSetup = pVkSetup;
     // first create the depth resource
     depthResource.createDepthResource(vkSetup, swapChainData->extent, commandPool);
     // then create the framebuffers
-    createFrameBuffers(vkSetup, swapChainData);
+    createFrameBuffers(swapChainData);
 }
 
 void FramebufferData::cleanupFrambufferData() {
-
+    // destroy the depth image and related stuff (view and free memory)
+    vkDestroyImageView(vkSetup->device, depthResource.depthImageView, nullptr);
+    vkDestroyImage(vkSetup->device, depthResource.depthImage, nullptr);
+    vkFreeMemory(vkSetup->device, depthResource.depthImageMemory, nullptr);
+    // then desroy the frame buffers
+    for (size_t i = 0; i < framebuffers.size(); i++) {
+        vkDestroyFramebuffer(vkSetup->device, framebuffers[i], nullptr);
+    }
 }
 
 //////////////////////
@@ -32,7 +41,7 @@ void FramebufferData::cleanupFrambufferData() {
 //
 //////////////////////
 
-void FramebufferData::createFrameBuffers(const VulkanSetup* vkSetup, const SwapChainData* swapChainData) {
+void FramebufferData::createFrameBuffers(const SwapChainData* swapChainData) {
     // resize the container to hold all the framebuffers, or image views, in the swap chain
     framebuffers.resize(swapChainData->imageViews.size());
 

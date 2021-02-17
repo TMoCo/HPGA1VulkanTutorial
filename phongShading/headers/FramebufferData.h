@@ -19,7 +19,7 @@ class FramebufferData {
     //////////////////////
 public:
 
-    void initFramebufferData(const VulkanSetup* vkSetup, const SwapChainData* swapChainData, const VkCommandPool& commandPool);
+    void initFramebufferData(VulkanSetup* pVkSetup, const SwapChainData* swapChainData, const VkCommandPool& commandPool);
 
     void cleanupFrambufferData();
 
@@ -29,8 +29,7 @@ private:
     // Framebuffers creation
     //
 
-    void createFrameBuffers(const VulkanSetup* vkSetup, const SwapChainData* swapChainData);
-
+    void createFrameBuffers(const SwapChainData* swapChainData);
 
     //////////////////////
     //
@@ -39,6 +38,7 @@ private:
     //////////////////////
 
 public:
+    VulkanSetup* vkSetup;
 
     //
     // Framebuffers
