@@ -8,6 +8,8 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE // because OpenGL uses depth range -1.0 - 1.0 and Vulkan uses 0.0 - 1.0
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 // image loading
 #define STB_IMAGE_IMPLEMENTATION
@@ -489,15 +491,31 @@ void DuckApplication::updateUniformBuffer(uint32_t currentImage) {
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     UniformBufferObject ubo{};
-    // translate the model in the positive z axis
+
+    // translate the model to start in view of the camera
     ubo.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -30.0f, -85.0f));
-    ubo.model = glm::rotate(ubo.model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    // add the user translation
+    ubo.model = glm::translate(ubo.model, glm::vec3(translateX, translateY, translateZ));
+    
+    ubo.model = glm::scale(ubo.model, glm::vec3(zoom, zoom, zoom));
+
+    // add the x, y, z rotations
+    glm::quat rotation = glm::quat(glm::vec3(glm::radians(rotateX), glm::radians(rotateY), glm::radians(rotateZ)));
+
+    ubo.model = ubo.model * glm::toMat4(rotation);
+
+    // rotate the model to be upright
+    //ubo.model = glm::rotate(ubo.model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
     // a simple rotation around the z axis
-    ubo.model = glm::rotate(ubo.model, time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    //ubo.model = glm::rotate(ubo.model, time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+
     // make the camera view the geometry from above at a 45° angle (eye pos, subject pos, up direction)
     ubo.view = glm::mat4(1.0f); //glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    
     // proect the scene with a 45° fov, use current swap chain extent to compute aspect ratio, near, far
     ubo.proj = glm::perspective(glm::radians(45.0f), swapChainData.extent.width / (float)swapChainData.extent.height, 0.1f, 100.0f);
+    
     // designed for openGL, so y coordinates are inverted
     ubo.proj[1][1] *= -1;
 
@@ -972,11 +990,27 @@ void DuckApplication::renderUI() {
     ImGui::NewFrame();
 
     // for now just display the demo window
-    ImGui::ShowDemoWindow();
+    //ImGui::ShowDemoWindow();
 
-    //ImGui::Begin("Hello, world!"); // Create a window called "Hello, world!" and append into it.
-    //ImGui::Text("This is some useful text.");
-    //ImGui::End();
+    ImGui::Begin("Transform the model"); // Create a window for transforming the model in world space
+    ImGui::Text("Translation:");
+    ImGui::SliderFloat("x ", &translateX, -100.0f, 100.0f);
+    ImGui::SliderFloat("y ", &translateY, -100.0f, 100.0f);
+    ImGui::SliderFloat("z ", &translateZ, -100.0f, 100.0f);
+    ImGui::Text("Rotation:");
+    ImGui::SliderFloat("x", &rotateX, 0.0f, 360.0f);
+    ImGui::SliderFloat("y", &rotateY, 0.0f, 360.0f);
+    ImGui::SliderFloat("z", &rotateZ, 0.0f, 360.0f);
+    ImGui::Text("Zoom:");
+    ImGui::SliderFloat("", &zoom, 0.0f, 1.0f);
+    ImGui::End();
+
+    ImGui::Begin("Render stages");
+    ImGui::Checkbox("Depth test", &enableDepthTest);
+    ImGui::Checkbox("Ambient/Albedo", &enableAlbedo);
+    ImGui::Checkbox("Diffues/Labertian", &enableDiffuse);
+    ImGui::Checkbox("Specular", &enableSpecular);
+    ImGui::End();
 
     // tell ImGui to render
     ImGui::Render();

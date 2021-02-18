@@ -157,6 +157,22 @@ private:
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
 
+    // Variables changed by the UI
+    float translateX = 0.0f;
+    float translateY = 0.0f;
+    float translateZ = 0.0f;
+
+    float rotateX = 0.0f;
+    float rotateY = 0.0f;
+    float rotateZ = 0.0f;
+
+    float zoom = 1.0f;
+
+    bool enableDepthTest = true;
+    bool enableAlbedo = true;
+    bool enableDiffuse = true;
+    bool enableSpecular = true;
+
 
     // a texture
     VkImage textureImage;

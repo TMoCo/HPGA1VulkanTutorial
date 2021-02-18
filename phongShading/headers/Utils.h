@@ -23,15 +23,15 @@
 //////////////////////
 
 // constants for window dimensions
-const uint32_t WIDTH =  800;
+const uint32_t WIDTH  = 800;
 const uint32_t HEIGHT = 600;
 
 // strings for the vulkan instance
-const std::string APP_NAME =    "Basic application";
+const std::string APP_NAME    = "Basic application";
 const std::string ENGINE_NAME = "No Engine";
 
 // paths to the model and texture
-const std::string MODEL_PATH =   "C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\assets\\mallard.obj";
+const std::string MODEL_PATH   = "C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\assets\\mallard.obj";
 const std::string TEXTURE_PATH = "C:\\Users\\Tommy\\Documents\\COMP4\\5822HighPerformanceGraphics\\A1\\HPGA1VulkanTutorial\\phongShading\\assets\\mallard.jpg";
 
 // paths to the fragment and vertex shaders used
