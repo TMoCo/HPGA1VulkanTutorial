@@ -26,13 +26,14 @@ void FramebufferData::initFramebufferData(VulkanSetup* pVkSetup, const SwapChain
 }
 
 void FramebufferData::cleanupFrambufferData() {
-    // destroy the depth image and related stuff (view and free memory)
+    // destroy the depth image and related data (view and free memory)
     vkDestroyImageView(vkSetup->device, depthResource.depthImageView, nullptr);
     vkDestroyImage(vkSetup->device, depthResource.depthImage, nullptr);
     vkFreeMemory(vkSetup->device, depthResource.depthImageMemory, nullptr);
     // then desroy the frame buffers
     for (size_t i = 0; i < framebuffers.size(); i++) {
         vkDestroyFramebuffer(vkSetup->device, framebuffers[i], nullptr);
+        vkDestroyFramebuffer(vkSetup->device, imGuiFramebuffers[i], nullptr);
     }
 }
 

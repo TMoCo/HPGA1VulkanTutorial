@@ -60,8 +60,6 @@ private:
 
     void initImGui();
 
-    void createImGuiRenderPass();
-
     void uploadFonts();
 
     void renderUI();
@@ -171,10 +169,6 @@ private:
     VkDeviceMemory textureImageMemory;
 
 
-    // the imgui render pass
-    VkRenderPass imGuiRenderPass;
-
-
     // layout used to specify fragment uniforms, still required even if not used
     VkDescriptorSetLayout descriptorSetLayout;
     VkDescriptorPool descriptorPool;
@@ -203,6 +197,8 @@ private:
 
     // keep track of the current frame
     size_t currentFrame = 0;
+    // the index of the image retrieved from the swap chain
+    uint32_t imageIndex;
     bool framebufferResized = false;
 };
 

@@ -35,7 +35,10 @@ void SwapChainData::cleanupSwapChainData() {
     // destroy pipeline and related data
     vkDestroyPipeline(vkSetup->device, graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(vkSetup->device, graphicsPipelineLayout, nullptr);
+
+    // destroy the render passes
     vkDestroyRenderPass(vkSetup->device, renderPass, nullptr);
+    vkDestroyRenderPass(vkSetup->device, imGuiRenderPass, nullptr);
 
     // loop over the image views and destroy them. NB we don't destroy the images because they are implicilty created
     // and destroyed by the swap chain

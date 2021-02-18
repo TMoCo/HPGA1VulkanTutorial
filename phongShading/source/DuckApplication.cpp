@@ -97,7 +97,7 @@ void DuckApplication::initVulkan() {
     createDescriptorPool();
     createDescriptorSets();
     createCommandBuffers(&renderCommandBuffers, renderCommandPool);
-    //createImGuiCommandbuffers();
+    createCommandBuffers(&imGuiCommandBuffers, imGuiCommandPool);
 
     // record the rendering command buffer once it has been created
     recordGemoetryCommandBuffer();
@@ -135,54 +135,14 @@ void DuckApplication::initImGui() {
     init_info.PipelineCache = VK_NULL_HANDLE;
     init_info.DescriptorPool = descriptorPool;
     init_info.Allocator = nullptr;
-    init_info.MinImageCount = swapChainData.supportDetails.capabilities.minImageCount;
+    init_info.MinImageCount = swapChainData.supportDetails.capabilities.minImageCount + 1;
     init_info.ImageCount = static_cast<uint32_t>(swapChainData.images.size());
 
     // the imgui render pass
     ImGui_ImplVulkan_Init(&init_info, swapChainData.imGuiRenderPass);
-}
 
-void DuckApplication::createImGuiRenderPass() {
-    // creat the ImGui render pass
-    VkAttachmentDescription attachment = {};
-    attachment.format = swapChainData.imageFormat;
-    attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // the final layout is the presentation to the window
-
-    VkAttachmentReference colorAttachment = {};
-    colorAttachment.attachment = 0;
-    colorAttachment.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass = {};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachment;
-
-    VkSubpassDependency dependency = {};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;  // or VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    VkRenderPassCreateInfo info = {};
-    info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    info.attachmentCount = 1;
-    info.pAttachments = &attachment;
-    info.subpassCount = 1;
-    info.pSubpasses = &subpass;
-    info.dependencyCount = 1;
-    info.pDependencies = &dependency;
-
-    if (vkCreateRenderPass(vkSetup.device, &info, nullptr, &imGuiRenderPass) != VK_SUCCESS) {
-        throw std::runtime_error("Could not create Dear ImGui's render pass");
-    }
+    // upload the ImGui fonts
+    uploadFonts();
 }
 
 void DuckApplication::uploadFonts() {
@@ -804,17 +764,15 @@ void DuckApplication::recreateVulkanData() {
     // wait before destroying if in use by the device
     vkDeviceWaitIdle(vkSetup.device);
     
-    // destroy whatever is dependent on the old swap chain
+    // destroy whatever is dependent on the old swap chain, tsarting with the command buffers
     vkFreeCommandBuffers(vkSetup.device, renderCommandPool, static_cast<uint32_t>(renderCommandBuffers.size()), renderCommandBuffers.data());
+    vkFreeCommandBuffers(vkSetup.device, imGuiCommandPool, static_cast<uint32_t>(imGuiCommandBuffers.size()), imGuiCommandBuffers.data());
+    
     // also destroy the uniform buffers that worked with the swap chain
     for (size_t i = 0; i < swapChainData.images.size(); i++) {
         vkDestroyBuffer(vkSetup.device, uniformBuffers[i], nullptr);
         vkFreeMemory(vkSetup.device, uniformBuffersMemory[i], nullptr);
     }
-
-    // cleanup the descriptor pools and descriptor sets
-    vkDestroyDescriptorPool(vkSetup.device, imGuiDescriptorPool, nullptr);
-    vkDestroyDescriptorPool(vkSetup.device, descriptorPool, nullptr);
 
     // destroy the framebuffer data, followed by the swap chain data
     framebufferData.cleanupFrambufferData();
@@ -824,10 +782,13 @@ void DuckApplication::recreateVulkanData() {
     swapChainData.initSwapChainData(&vkSetup, &descriptorSetLayout);
     framebufferData.initFramebufferData(&vkSetup, &swapChainData, renderCommandPool);
 
-    createDescriptorPool();
+    // recreate descriptor data
     createUniformBuffers(); 
     createDescriptorSets();
+
+    // recreate command buffers
     createCommandBuffers(&renderCommandBuffers, renderCommandPool); 
+    createCommandBuffers(&imGuiCommandBuffers, imGuiCommandPool); 
 
     // record the rendering command buffer once it has been created
     recordGemoetryCommandBuffer();
@@ -886,20 +847,6 @@ void DuckApplication::mainLoop() {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
-
-        // the ui stuff
-        /*
-        ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-        ImGui::ShowDemoWindow();
-        ImGui::Render();
-        */
-
-        // magic stuff with ImGui happening here
-        //memcpy(&wd->ClearValue.color.float32[0], &clear_color, 4 * sizeof(float));
-        
-        // the vulkan stuff
         drawFrame();
     }
     vkDeviceWaitIdle(vkSetup.device);
@@ -925,7 +872,6 @@ void DuckApplication::drawFrame() {
     vkWaitForFences(vkSetup.device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
     // retrieve an image from the swap chain
-    uint32_t imageIndex;
     // swap chain is an extension so use the vk*KHR function
     VkResult result = vkAcquireNextImageKHR(vkSetup.device, swapChainData.swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex); // params:
     // the logical device and the swap chain we want to restrieve image from
@@ -964,7 +910,7 @@ void DuckApplication::drawFrame() {
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     // which semaphores to wait on before execution begins
-    VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
+    VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[imageIndex] };
     // which stages of the pipeline to wait at (here at the stage where we write colours to the attachment)
     // we can in theory start work on vertex shader etc while image is not yet available
     VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
@@ -976,7 +922,7 @@ void DuckApplication::drawFrame() {
     submitInfo.pCommandBuffers = submitCommandBuffers.data();
 
     // which semaphores to signal once the command buffer(s) has finished, we are using the renderFinishedSemaphore for that
-    VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
+    VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[imageIndex] };
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
@@ -1039,28 +985,27 @@ void DuckApplication::renderUI() {
     VkCommandBufferBeginInfo commandbufferInfo = {};
     commandbufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     commandbufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(imGuiCommandBuffers[currentFrame], &commandbufferInfo);
+    vkBeginCommandBuffer(imGuiCommandBuffers[imageIndex], &commandbufferInfo);
 
     // begin the render pass
     VkRenderPassBeginInfo renderPassBeginInfo = {};
     renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassBeginInfo.renderPass = imGuiRenderPass;
-    renderPassBeginInfo.framebuffer = framebufferData.imGuiFramebuffers[currentFrame];
+    renderPassBeginInfo.renderPass = swapChainData.imGuiRenderPass;
+    renderPassBeginInfo.framebuffer = framebufferData.imGuiFramebuffers[imageIndex];
     renderPassBeginInfo.renderArea.extent.width =  swapChainData.extent.width;
     renderPassBeginInfo.renderArea.extent.height = swapChainData.extent.height;
     renderPassBeginInfo.clearValueCount = 1;
     VkClearValue clearValue{ 0.0f, 0.0f, 0.0f, 0.0f }; // completely opaque clear value
     renderPassBeginInfo.pClearValues = &clearValue;
-    vkCmdBeginRenderPass(imGuiCommandBuffers[currentFrame], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(imGuiCommandBuffers[imageIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     // Record Imgui Draw Data and draw funcs into command buffer
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), imGuiCommandBuffers[currentFrame]);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), imGuiCommandBuffers[imageIndex]);
 
     // Submit command buffer
-    vkCmdEndRenderPass(imGuiCommandBuffers[currentFrame]);
-    vkEndCommandBuffer(imGuiCommandBuffers[currentFrame]);
+    vkCmdEndRenderPass(imGuiCommandBuffers[imageIndex]);
+    vkEndCommandBuffer(imGuiCommandBuffers[imageIndex]);
 }
-
 
 //////////////////////
 //
