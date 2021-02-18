@@ -1,19 +1,43 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
+//
+// Uniform
+//
+
+// the uniform buffer object
+layout(binding = 0) uniform UniformBufferObject {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+    int uvToRgb;
+    vec3 ambient;
+    vec3 diffuse;
+    vec4 specular;
+    vec3 lightPos;
+} ubo;
+
 layout(binding = 1) uniform sampler2D texSampler; // equivalent sampler1D and sampler3D
+
+//
+// Input from previous stage
+//
 
 layout(location = 0) in vec3 fragPos;
 layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in vec3 fragColor;
 layout(location = 3) in vec2 fragTexCoord;
 
+//
+// Output
+//
+
 layout(location = 0) out vec4 outColor;
 
 // light position
 // NB we assume the light is white:
 // const vec3 lightColour = vec3(1.0, 1.0, 1.0);
-const vec3 lightPos = vec3(0, -30, 50);
+//const vec3 lightPos = vec3(0, -30, 50);
 
 struct Material {
     vec3 ambient;
@@ -27,28 +51,31 @@ const Material mallard = Material(vec3(0.1, 0.1, 0.1), vec3(0.5, 0.5, 0.5), vec3
 
 void main()
 {
-    // the colour of the model without lighting
-    vec3 color = texture(texSampler, fragTexCoord).rgb;
-    // view direction, assumes eye is at the origin (which is the case)
-    vec3 viewDir = normalize(-fragPos);
-    // light direction from fragment to light
-    vec3 lightDir = normalize(lightPos - fragPos);
-    // reflect direction, reflection of the light direction by the fragment normal
-    vec3 reflectDir = reflect(-lightDir, fragNormal);
+    if (ubo.uvToRgb == 1) {
+        outColor = vec4(fragTexCoord, 0.0, 1.0);
+    }
+    else {
+        // the colour of the model without lighting
+        vec3 color = texture(texSampler, fragTexCoord).rgb;
+        // view direction, assumes eye is at the origin (which is the case)
+        vec3 viewDir = normalize(-fragPos);
+        // light direction from fragment to light
+        vec3 lightDir = normalize(ubo.lightPos - fragPos);
+        // reflect direction, reflection of the light direction by the fragment normal
+        vec3 reflectDir = reflect(-lightDir, fragNormal);
 
+        // ambient
+        vec3 ambient = mallard.ambient;
 
-    // ambient
-    vec3 ambient = mallard.ambient;
+        // diffuse (lambertian)
+        float diff = max(dot(lightDir, fragNormal), 0.0);
+        vec3 diffuse = mallard.diffuse * diff;
 
-    // diffuse (lambertian)
-    float diff = max(dot(lightDir, fragNormal), 0.0);
-    vec3 diffuse = mallard.diffuse * diff;
+        // specular
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), mallard.specularExponent);
+        vec3 specular = mallard.specular * spec;
 
-    // specular
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), mallard.specularExponent);
-    vec3 specular = mallard.specular * spec;
-
-    // vector multiplication is element wise <3
-    outColor = vec4((ambient + diffuse + specular) * color, 1.0);
-    //outColor = vec4(ambient + diffuse + specular, 1.0);
+        // vector multiplication is element wise <3
+        outColor = vec4((ambient + diffuse + specular) * color, 1.0);
+    }
 }

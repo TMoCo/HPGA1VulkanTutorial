@@ -16,6 +16,10 @@
 #include <stdexcept>
 
 #include <vulkan/vulkan_core.h> // vulkan core structs &c
+
+// vectors, matrices ...
+#include <glm/glm.hpp>
+
 //////////////////////
 //
 // Constants
@@ -51,6 +55,8 @@ const size_t MAX_FRAMES_IN_FLIGHT = 2;
 
 // the ImGUI number of descriptor pools
 const uint32_t IMGUI_POOL_NUM = 1000;
+
+const glm::vec3 LIGHT_POS(0.0f, -30.0f, 50.0f);
 
 //////////////////////
 //

@@ -538,8 +538,13 @@ void SwapChainData::createGraphicsPipeline(VkDescriptorSetLayout* descriptorSetL
     // enable and configure depth testing
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+
     // spec if the depth should be compared to the depth buffer
-    depthStencil.depthTestEnable = VK_TRUE;
+    if (enableDepthTest)
+        depthStencil.depthTestEnable = VK_TRUE;
+    else
+        depthStencil.depthTestEnable = VK_FALSE;
+
     // specifies if the new depth that pass the depth test should be written to the buffer
     depthStencil.depthWriteEnable = VK_TRUE;
     // pecifies the comparison that is performed to keep or discard fragments (here lower depth = closer so keep less)

@@ -110,6 +110,12 @@ public:
     VkPipelineLayout graphicsPipelineLayout;
     // the graphics pipeline
     VkPipeline       graphicsPipeline;
+
+    //
+    // Flags
+    //
+
+    bool enableDepthTest = true; // default
 };
 
 #endif // !VULKAN_SWAP_CHAIN_H

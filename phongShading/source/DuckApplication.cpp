@@ -186,7 +186,7 @@ void DuckApplication::createDescriptorSetLayout() {
     // specify binding used
     uboLayoutBinding.binding = 0; // the first descriptor
     uboLayoutBinding.descriptorCount = 1; // single uniform buffer object so just 1, could be used to specify a transform for each bone in a skeletal animation
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; // in which shader stage is the descriptor going to be referenced
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT; // in which shader stage is the descriptor going to be referenced
     uboLayoutBinding.pImmutableSamplers = nullptr; // relevant to image sampling related descriptors
 
     // same as above but for a texture sampler rather than for uniforms
@@ -198,9 +198,9 @@ void DuckApplication::createDescriptorSetLayout() {
     // can use the texture sampler in the vertex stage as part of a height map to deform the vertices in a grid
     samplerLayoutBinding.pImmutableSamplers = nullptr;
 
-
     // put the descriptors in an array
     std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerLayoutBinding };
+    
     // descriptor set bindings combined into a descriptor set layour object, created the same way as other vk objects by filling a struct in
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -244,36 +244,6 @@ void DuckApplication::createDescriptorPool() {
 
     // create the descirptor pool
     if (vkCreateDescriptorPool(vkSetup.device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create descriptor pool!");
-    }
-}
-
-void DuckApplication::createImGuiDescriptorPool() {
-
-    // for ImGui
-    std::array<VkDescriptorPoolSize, 11> poolSizes{};
-    uint32_t swapChainImagesSize = static_cast<uint32_t>(swapChainData.images.size());
-    poolSizes[0] = { VK_DESCRIPTOR_TYPE_SAMPLER, swapChainImagesSize };
-    poolSizes[1] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, swapChainImagesSize };
-    poolSizes[2] = { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, swapChainImagesSize };
-    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, swapChainImagesSize };
-    poolSizes[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, swapChainImagesSize };
-    poolSizes[5] = { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, swapChainImagesSize };
-    poolSizes[6] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, swapChainImagesSize };
-    poolSizes[7] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, swapChainImagesSize };
-    poolSizes[8] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, swapChainImagesSize };
-    poolSizes[9] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, swapChainImagesSize };
-    poolSizes[10] = { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, swapChainImagesSize };
-
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size()); // max nb of individual descriptors 
-    poolInfo.pPoolSizes = poolSizes.data(); // the descriptors
-    // the maximum number of descriptor sets that may be allocated
-    poolInfo.maxSets = static_cast<uint32_t>(swapChainData.images.size());
-
-    // create the descirptor pool
-    if (vkCreateDescriptorPool(vkSetup.device, &poolInfo, nullptr, &imGuiDescriptorPool) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor pool!");
     }
 }
@@ -518,6 +488,9 @@ void DuckApplication::updateUniformBuffer(uint32_t currentImage) {
     
     // designed for openGL, so y coordinates are inverted
     ubo.proj[1][1] *= -1;
+
+    // set for mapping to texture
+    ubo.uvToRgb = uvToRgb;
 
     // copy the uniform buffer object into the uniform buffer
     void* data;
@@ -971,7 +944,9 @@ void DuckApplication::drawFrame() {
     result = vkQueuePresentKHR(vkSetup.presentQueue, &presentInfo);
 
     // similar to when acquiring the swap chain image, check that the presentation queue can accept the image, also check for resizing
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized || (enableDepthTest != swapChainData.enableDepthTest)) {
+        // tell the swapchaindata to change whether to enable or disable the depth testing when recreating the pipeline
+        swapChainData.enableDepthTest = enableDepthTest;
         framebufferResized = false;
         recreateVulkanData();
     }
@@ -1005,8 +980,9 @@ void DuckApplication::renderUI() {
     ImGui::SliderFloat("", &zoom, 0.0f, 1.0f);
     ImGui::End();
 
-    ImGui::Begin("Render stages");
+    ImGui::Begin("Render stages and material properties");
     ImGui::Checkbox("Depth test", &enableDepthTest);
+    ImGui::Checkbox("UV to RGB", &uvToRgb);
     ImGui::Checkbox("Ambient/Albedo", &enableAlbedo);
     ImGui::Checkbox("Diffues/Labertian", &enableDiffuse);
     ImGui::Checkbox("Specular", &enableSpecular);
