@@ -115,10 +115,6 @@ private:
 
     void drawFrame();
 
-    void drawImGuiFrame();
-
-    void presentImGuiFrame();
-
     void updateUniformBuffer(uint32_t currentImage);
 
     //--------------------------------------------------------------------//
@@ -199,6 +195,7 @@ private:
     size_t currentFrame = 0;
     // the index of the image retrieved from the swap chain
     uint32_t imageIndex;
+    // resize window flag
     bool framebufferResized = false;
 };
 

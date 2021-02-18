@@ -910,7 +910,7 @@ void DuckApplication::drawFrame() {
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     // which semaphores to wait on before execution begins
-    VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[imageIndex] };
+    VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
     // which stages of the pipeline to wait at (here at the stage where we write colours to the attachment)
     // we can in theory start work on vertex shader etc while image is not yet available
     VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
@@ -1015,22 +1015,29 @@ void DuckApplication::renderUI() {
 
 void DuckApplication::cleanup() {
 
+    // destroy the imgui context when the program ends
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
     // destroy whatever is dependent on the old swap chain
     vkFreeCommandBuffers(vkSetup.device, renderCommandPool, static_cast<uint32_t>(renderCommandBuffers.size()), renderCommandBuffers.data());
+    vkFreeCommandBuffers(vkSetup.device, imGuiCommandPool, static_cast<uint32_t>(imGuiCommandBuffers.size()), imGuiCommandBuffers.data());
+    
     // also destroy the uniform buffers that worked with the swap chain
     for (size_t i = 0; i < swapChainData.images.size(); i++) {
         vkDestroyBuffer(vkSetup.device, uniformBuffers[i], nullptr);
         vkFreeMemory(vkSetup.device, uniformBuffersMemory[i], nullptr);
     }
 
-    // cleanup the descriptor pools and descriptor sets
-    vkDestroyDescriptorPool(vkSetup.device, imGuiDescriptorPool, nullptr);
-    vkDestroyDescriptorPool(vkSetup.device, descriptorPool, nullptr);
-
     // call the function we created for destroying the swap chain and frame buffers
     // in the reverse order of their creation
     framebufferData.cleanupFrambufferData();
     swapChainData.cleanupSwapChainData();
+
+    // cleanup the descriptor pools and descriptor sets
+    vkDestroyDescriptorPool(vkSetup.device, imGuiDescriptorPool, nullptr);
+    vkDestroyDescriptorPool(vkSetup.device, descriptorPool, nullptr);
 
     // destroy the texture image view and sampler
     vkDestroySampler(vkSetup.device, textureSampler, nullptr);
@@ -1051,6 +1058,7 @@ void DuckApplication::cleanup() {
     vkDestroyBuffer(vkSetup.device, vertexBuffer, nullptr);
     vkFreeMemory(vkSetup.device, vertexBufferMemory, nullptr);
 
+
     // loop over each frame and destroy its semaphores 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vkDestroySemaphore(vkSetup.device, renderFinishedSemaphores[i], nullptr);
@@ -1059,6 +1067,7 @@ void DuckApplication::cleanup() {
     }
 
     vkDestroyCommandPool(vkSetup.device, renderCommandPool, nullptr);
+    vkDestroyCommandPool(vkSetup.device, imGuiCommandPool, nullptr);
 
     vkSetup.cleanupSetup();
 
