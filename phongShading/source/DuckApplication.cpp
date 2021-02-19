@@ -444,7 +444,7 @@ void DuckApplication::createUniformBuffers() {
     // specify what the size of the buffer is
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
-    // resize the uniform buffer to be as big as the swap chain, each image has its own se of uniforms
+    // resize the uniform buffer to be as big as the swap chain, each image has its own set of uniforms
     uniformBuffers.resize(swapChainData.images.size());
     uniformBuffersMemory.resize(swapChainData.images.size());
 
@@ -491,6 +491,10 @@ void DuckApplication::updateUniformBuffer(uint32_t currentImage) {
 
     // set for mapping to texture
     ubo.uvToRgb = uvToRgb;
+    // set for enabling/disabling material
+    ubo.hasAmbient = enableAlbedo;
+    ubo.hasDiffuse = enableDiffuse;
+    ubo.hasSpecular = enableSpecular;
 
     // copy the uniform buffer object into the uniform buffer
     void* data;
@@ -667,12 +671,13 @@ void DuckApplication::loadModel() {
                 attrib.normals[3 * index.normal_index + 2]
             };
 
+            vertex.material = glm::vec4(0.1f, 0.5f, 0.7f, 38.0f);
+
             vertex.texCoord = {
                 attrib.texcoords[2 * index.texcoord_index + 0],
                 1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
             };
 
-            vertex.color = { 1.0f, 1.0f, 1.0f };
 
             vertices.push_back(vertex);
             indices.push_back(indices.size());

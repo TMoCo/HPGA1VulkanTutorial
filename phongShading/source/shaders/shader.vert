@@ -11,13 +11,13 @@ layout(binding = 0) uniform UniformBufferObject {
 // inputs specified in the vertex buffer attributes
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
-layout(location = 2) in vec3 inColor;
+layout(location = 2) in vec4 inMaterial;
 layout(location = 3) in vec2 inTexCoord;
 
 // the shader output, goes to the next stage in the pipeline (for our pipeline goes to the fragment stage)
 layout(location = 0) out vec3 fragPos;
 layout(location = 1) out vec3 fragNormal;
-layout(location = 2) out vec3 fragColor;
+layout(location = 2) out vec4 fragMaterial;
 layout(location = 3) out vec2 fragTexCoord;
 
 // main function, entry point to the shader
@@ -28,6 +28,6 @@ void main() {
     fragPos = pos.xyz; // swizzle to get the vec3 xyz components of the shader
     // simply pass along the vertex colour and texture coordinate
     fragNormal = inNormal;
-    fragColor = inColor;
+    fragMaterial = inMaterial;
     fragTexCoord = inTexCoord;
 }

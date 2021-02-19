@@ -39,14 +39,11 @@ struct UniformBufferObject {
     glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
-    int uvToRgb;
-    // a struct containing material properties for the phong shader
-    glm::vec3 ambient;
-    glm::vec3 diffuse;
-    glm::vec4 specular;
-    // light position
-    glm::vec3 lightPos = LIGHT_POS;
     // flag for setting the colour to texture coordinates
+    int uvToRgb; 
+    int hasAmbient;
+    int hasDiffuse;
+    int hasSpecular;
 };
 
 

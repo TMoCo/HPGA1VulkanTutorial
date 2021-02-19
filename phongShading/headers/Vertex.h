@@ -15,8 +15,8 @@ struct Vertex {
     glm::vec3 pos; 
     // normal
     glm::vec3 normal; 
-    // colour
-    glm::vec3 color; 
+    // material properties
+    glm::vec4 material; 
     // texture coordinate
     glm::vec2 texCoord; 
 
@@ -36,22 +36,22 @@ struct Vertex {
         // we have two attributes: position and colour. The struct describes how to extract an attribute
         // from a chunk of vertex data from a binding description
         std::array<VkVertexInputAttributeDescription, 4> attributeDescriptions{};
-        // position
+        // position (vec3)
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
         attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[0].offset = offsetof(Vertex, pos);
-        // normal
+        // normal (vec3)
         attributeDescriptions[1].binding = 0;
         attributeDescriptions[1].location = 1;
         attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[1].offset = offsetof(Vertex, normal);
-        // colour
+        // material (vec4)
         attributeDescriptions[2].binding = 0;
         attributeDescriptions[2].location = 2;
-        attributeDescriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[2].offset = offsetof(Vertex, color);
-        // tex coord
+        attributeDescriptions[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        attributeDescriptions[2].offset = offsetof(Vertex, material);
+        // tex coord (vec2)
         attributeDescriptions[3].binding = 0;
         attributeDescriptions[3].location = 3;
         attributeDescriptions[3].format = VK_FORMAT_R32G32_SFLOAT;
