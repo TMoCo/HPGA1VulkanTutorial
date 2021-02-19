@@ -1,19 +1,15 @@
-// functions, structs and enums
-// #include <vulkan/vulkan.h> 
-
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
+//
+// Main function for the application
+//
 
 // reporting and propagating exceptions
 #include <iostream> 
 #include <stdexcept>
 
-// macros
-#include <cstdlib>
+#include <cstdlib> // EXIT_SUCCES & EXIT_FAILURE macros
 
 // include the application definition
 #include <DuckApplication.h>
-
 
 int main() {
     DuckApplication app;

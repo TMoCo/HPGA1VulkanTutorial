@@ -1,11 +1,15 @@
-#include <Model.h>
+//
+// Definition of the model class
+//
+
+#include <string> // string class
+#include <Model.h> // model class declaration
 
 // model loading
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
-
-void Model::loadModelle(const std::string& path) {
+void Model::loadModel(const std::string& path) {
     // setup variables to get model info
     tinyobj::attrib_t attrib; // contains all the positions, normals, textures and faces
     std::vector<tinyobj::shape_t> shapes; // all the separate objects and their faces
@@ -35,12 +39,13 @@ void Model::loadModelle(const std::string& path) {
                 attrib.normals[3 * index.normal_index + 2]
             };
 
+            vertex.material = glm::vec4(0.1f, 0.5f, 0.7f, 38.0f);
+
             vertex.texCoord = {
                 attrib.texcoords[2 * index.texcoord_index + 0],
                 1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
             };
 
-            vertex.color = { 1.0f, 1.0f, 1.0f };
 
             vertices.push_back(vertex);
             indices.push_back(indices.size());

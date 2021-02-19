@@ -4,7 +4,7 @@
 // QueueFamilyIndices struct
 //
 
-QueueFamilyIndices QueueFamilyIndices::findQueueFamilies(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
+QueueFamilyIndices QueueFamilyIndices::findQueueFamilies(const VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
     QueueFamilyIndices indices;
     // similar to physical device and extensions and layers....
     uint32_t queueFamilyCount = 0;

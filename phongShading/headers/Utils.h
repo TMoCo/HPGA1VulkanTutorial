@@ -64,7 +64,7 @@ const glm::vec3 LIGHT_POS(0.0f, -30.0f, 50.0f);
 //
 //////////////////////
 
-#define NDEBUG // uncomment to remove validation layers for debug
+//#define NDEBUG // uncomment to remove validation layers and stop debug
 #ifdef NDEBUG
 const bool enableValidationLayers = false;
 #else

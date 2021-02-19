@@ -5,6 +5,8 @@
 #ifndef DUCK_APPLICATION_H
 #define DUCK_APPLICATION_H
 
+#include <Texture.h> // the texture class
+#include <Model.h> // the model class
 #include <Vertex.h> // the vertex struct
 #include <VulkanSetup.h> // include the vulkan setup class
 #include <SwapChainData.h> // the swap chain class
@@ -101,12 +103,6 @@ private:
 
     //--------------------------------------------------------------------//
 
-    void createTextureImage();
-
-    void createTextureImageView();
-
-    //--------------------------------------------------------------------//
-
     void recreateVulkanData();
 
     //--------------------------------------------------------------------//
@@ -149,18 +145,25 @@ private:
     // the frame buffer and related data
     FramebufferData framebufferData;
 
+
     // object data
+    Model duckModel;
+
+    // texture data
+    Texture duckTexture;
+
     // vertex buffer
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
+
     // index buffer
     VkBuffer indexBuffer;
     VkDeviceMemory indexBufferMemory;
+
     // uniform buffers
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
+
 
     // Variables changed by the UI
     float translateX = 0.0f;
@@ -180,13 +183,6 @@ private:
     bool enableSpecular = true;
 
 
-    // a texture
-    VkImage textureImage;
-    VkImageView textureImageView;
-    VkSampler textureSampler; // lets us sample from an image, here the texture
-    VkDeviceMemory textureImageMemory;
-
-
     // layout used to specify fragment uniforms, still required even if not used
     VkDescriptorSetLayout descriptorSetLayout;
     VkDescriptorPool descriptorPool;
@@ -197,7 +193,6 @@ private:
     // command buffers
     VkCommandPool renderCommandPool;
     std::vector<VkCommandBuffer> renderCommandBuffers;
-
 
     // imgui command buffers
     VkCommandPool imGuiCommandPool;

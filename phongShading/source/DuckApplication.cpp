@@ -11,14 +11,6 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 
-// image loading
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-
-// model loading
-#define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
-
 // time 
 #include <chrono>
 
@@ -70,41 +62,59 @@ void DuckApplication::run() {
 //////////////////////
 
 void DuckApplication::initVulkan() {
-    // create the vulkan core 
+    //
+    // STEP 1: create the vulkan core 
+    //
+
     vkSetup.initSetup(window);
 
-    // create the descriptor set layout and render command pool before the swap chain
+    //
+    // STEP 2: create the descriptor set layout(s) and command pool(s)
+    //
+
+    // create the descriptor set layout and render command pool BEFORE the swap chain
     // these do not change over the lifetime of the application
     createDescriptorSetLayout();
     createCommandPool(&renderCommandPool, 0);
     createCommandPool(&imGuiCommandPool, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+
+    //
+    // STEP 3: Swap chain and frame buffers
+    //
 
     // create the swap chain
     swapChainData.initSwapChainData(&vkSetup, &descriptorSetLayout);
     // create the frame buffers
     framebufferData.initFramebufferData(&vkSetup, &swapChainData, renderCommandPool);
 
+    //
+    // STEP 4: Create the application's data (models, textures...)
+    //
+
     // textures can go in a separate class
-    createTextureImage();
-    createTextureImageView();
-    createTextureSampler();
+    duckTexture.createTexture(&vkSetup, TEXTURE_PATH, renderCommandPool);
 
     // model can go in a separate class
-    loadModel();
-    createVertexBuffer();
-    createIndexBuffer();
+    duckModel.loadModel(MODEL_PATH);
+
+    //
+    // STEP 5: create the vulkan data for accessing and using the app's data
+    //
 
     // these depend on the size of the framebuffer, so create them after 
+    createVertexBuffer();
+    createIndexBuffer();
     createUniformBuffers();
     createDescriptorPool();
     createDescriptorSets();
     createCommandBuffers(&renderCommandBuffers, renderCommandPool);
     createCommandBuffers(&imGuiCommandBuffers, imGuiCommandPool);
-
-    // record the rendering command buffer once it has been created
+    // record the rendering command buffer once it has been created and the model has been loaded
     recordGemoetryCommandBuffer();
 
-    // may need to go elsewhere
+    //
+    // STEP 6: setup synchronisation
+    //
     createSyncObjects();
 }
 
@@ -175,9 +185,11 @@ void DuckApplication::initWindow() {
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback); // tell the window what the call back for resizing is
 }
 
+//////////////////////
 //
 // Descriptors
 //
+//////////////////////
 
 void DuckApplication::createDescriptorSetLayout() {
     // provide details about every descriptor binding used in the shaders
@@ -282,8 +294,8 @@ void DuckApplication::createDescriptorSets() {
         // bind the actual image and sampler to the descriptors in the descriptor set
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = textureImageView;
-        imageInfo.sampler = textureSampler;
+        imageInfo.imageView = duckTexture.textureImageView;
+        imageInfo.sampler = duckTexture.textureSampler;
 
         // the struct configuring the descriptor set
         std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
@@ -320,125 +332,9 @@ void DuckApplication::createDescriptorSets() {
 
 //////////////////////
 // 
-// Textures and uniforms
-//
-//////////////////////
-
-//
-// Textures
-//
-
-void DuckApplication::createTextureImage() {
-    // uses command buffer so should be called after create command pool
-    int texWidth, texHeight, texChannels;
-
-    // load the file 
-    // forces image to be loaded with an alpha channel, returns ptr to first element in an array of pixels
-    stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha); 
-    // laid out row by row with 4 bytes by pixel in case of STBI_rgb_alpha
-    VkDeviceSize imageSize = texWidth * texHeight * 4;
-    if (!pixels) {
-        throw std::runtime_error("failed to load texture image!");
-    }
-
-    // create a staging buffer in host visible memory so we can map it, not device memory although that is our destination
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-
-    utils::createBuffer(&vkSetup.device, &vkSetup.physicalDevice, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        stagingBuffer, stagingBufferMemory);
-
-    // directly copy the pixels in the array from the image loading library to the buffer
-    void* data;
-    vkMapMemory(vkSetup.device, stagingBufferMemory, 0, imageSize, 0, &data);
-    memcpy(data, pixels, static_cast<size_t>(imageSize));
-    vkUnmapMemory(vkSetup.device, stagingBufferMemory);
-
-    // and cleanup pixels after copying in the data
-    stbi_image_free(pixels);
-
-    // now create the image
-    CreateImageData info{};
-    info.width = texWidth;
-    info.height = texHeight;
-    info.format = VK_FORMAT_R8G8B8A8_SRGB;
-    info.tiling = VK_IMAGE_TILING_OPTIMAL;
-    info.usage = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    info.properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    info.image = &textureImage;
-    info.imageMemory = &textureImageMemory;
-    utils::createImage(&vkSetup.device, &vkSetup.physicalDevice, info);
-
-    // next step is to copy the staging buffer to the texture image using our helper functions
-    TransitionImageLayoutData transitionData{};
-    transitionData.image = &textureImage;
-    transitionData.renderCommandPool = renderCommandPool;
-    transitionData.format = VK_FORMAT_R8G8B8A8_SRGB;
-    transitionData.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    transitionData.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    utils::transitionImageLayout(&vkSetup.device, &vkSetup.graphicsQueue, transitionData); // specify the initial layout VK_IMAGE_LAYOUT_UNDEFINED
-    utils::copyBufferToImage(&vkSetup.device, &vkSetup.graphicsQueue, renderCommandPool, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
-    // need another transfer to give the shader access to the texture
-    transitionData.image = &textureImage;
-    transitionData.renderCommandPool = renderCommandPool;
-    transitionData.format = VK_FORMAT_R8G8B8A8_SRGB;
-    transitionData.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    transitionData.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    utils::transitionImageLayout(&vkSetup.device, &vkSetup.graphicsQueue, transitionData);
-
-    // cleanup the staging buffer and its memory
-    vkDestroyBuffer(vkSetup.device, stagingBuffer, nullptr);
-    vkFreeMemory(vkSetup.device, stagingBufferMemory, nullptr);
-}
-
-void DuckApplication::createTextureImageView() {
-    // just like we need views for the swap chain images, so do we need a view for the texture image view
-    textureImageView = utils::createImageView(&vkSetup.device, textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
-}
-
-void DuckApplication::createTextureSampler() {
-    // configure the sampler
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    // how to interpolate texels that are magnified or minified
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    // addressing mode
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    // VK_SAMPLER_ADDRESS_MODE_REPEAT: Repeat the texture when going beyond the image dimensions.
-    // VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT: Like repeat, but inverts the coordinates to mirror the image when going beyond the dimensions.
-    // VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : Take the color of the edge closest to the coordinate beyond the image dimensions.
-    // VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE : Like clamp to edge, but instead uses the edge opposite to the closest edge.
-    // VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER : Return a solid color when sampling beyond the dimensions of the image
-
-    samplerInfo.anisotropyEnable = VK_TRUE; // use unless performance is a concern (IT WILL BE)
-    VkPhysicalDeviceProperties properties{}; // can query these here or at beginning for reference
-    vkGetPhysicalDeviceProperties(vkSetup.physicalDevice, &properties);
-    // limites the amount of texel samples that can be used to calculate final colours, obtain from the device properties
-    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
-    // self ecplanatory, can't be an arbitrary colour
-    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE; // which coordinate system we want to use to address texels! usually always normalised
-    // if comparison enabled, texels will be compared to a value and result is used in filtering (useful for shadow maps)
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-    // mipmapping fields
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.mipLodBias = 0.0f;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
-
-    // now create the configured sampler
-    if (vkCreateSampler(vkSetup.device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create texture sampler!");
-    }
-}
-
-//
 // Uniforms
 //
+//////////////////////
 
 void DuckApplication::createUniformBuffers() {
     // specify what the size of the buffer is
@@ -610,7 +506,7 @@ void DuckApplication::recordGemoetryCommandBuffer() {
         // first vertex, offset into the vertex buffer. Defines lowest value of gl_VertexIndex
         // first instance, offset for instance rendering. Defines lowest value of gl_InstanceIndex
 
-        vkCmdDrawIndexed(renderCommandBuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+        vkCmdDrawIndexed(renderCommandBuffers[i], static_cast<uint32_t>(duckModel.indices.size()), 1, 0, 0, 0);
         // params :
         // the command buffer
         // the indices
@@ -637,57 +533,13 @@ void DuckApplication::recordGemoetryCommandBuffer() {
 
 //////////////////////
 //
-// Model loading an VB/IB setup
+// Vertex buffer / Index buffer setup
 //
 //////////////////////
 
-void DuckApplication::loadModel() {
-    // setup variables to get model info
-    tinyobj::attrib_t attrib; // contains all the positions, normals, textures and faces
-    std::vector<tinyobj::shape_t> shapes; // all the separate objects and their faces
-    std::vector<tinyobj::material_t> materials; // object materials
-    std::string warn, err;
-
-    // load the model, show error if not
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
-        throw std::runtime_error(warn + err);
-    }
-
-    // combine all the shapes into a single model
-    for (const auto& shape : shapes) {
-        for (const auto& index : shape.mesh.indices) {
-            Vertex vertex{};
-
-            // set vertex data
-            vertex.pos = {
-                attrib.vertices[3 * index.vertex_index + 0],
-                attrib.vertices[3 * index.vertex_index + 1],
-                attrib.vertices[3 * index.vertex_index + 2]
-            };
-
-            vertex.normal = {
-                attrib.normals[3 * index.normal_index + 0],
-                attrib.normals[3 * index.normal_index + 1],
-                attrib.normals[3 * index.normal_index + 2]
-            };
-
-            vertex.material = glm::vec4(0.1f, 0.5f, 0.7f, 38.0f);
-
-            vertex.texCoord = {
-                attrib.texcoords[2 * index.texcoord_index + 0],
-                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-            };
-
-
-            vertices.push_back(vertex);
-            indices.push_back(indices.size());
-        }
-    }
-}
-
 void DuckApplication::createVertexBuffer() {
     // precompute buffer size
-    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+    VkDeviceSize bufferSize = sizeof(duckModel.vertices[0]) * duckModel.vertices.size();
     // call our helper buffer creation function
 
     // use a staging buffer for mapping and copying 
@@ -701,7 +553,7 @@ void DuckApplication::createVertexBuffer() {
     // access a region in memory ressource defined by offset and size (0 and bufferInfo.size), can use special value VK_WHOLE_SIZE to map all of the memory
     // second to last is for flages (none in current API so set to 0), last is output for pointer to mapped memory
     vkMapMemory(vkSetup.device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, vertices.data(), (size_t)bufferSize); // memcpy the data in the vertex list to that region in memory
+    memcpy(data, duckModel.vertices.data(), (size_t)bufferSize); // memcpy the data in the vertex list to that region in memory
     vkUnmapMemory(vkSetup.device, stagingBufferMemory); // unmap the memory 
     // possible issues as driver may not immediately copy data into buffer memory, writes to buffer may not be visible in mapped memory yet...
     // either use a heap that is host coherent (VK_MEMORY_PROPERTY_HOST_COHERENT_BIT in memory requirements)
@@ -719,7 +571,7 @@ void DuckApplication::createVertexBuffer() {
 
 void DuckApplication::createIndexBuffer() {
     // almost identical to the vertex buffer creation process except where commented
-    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+    VkDeviceSize bufferSize = sizeof(duckModel.indices[0]) * duckModel.indices.size();
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -727,7 +579,7 @@ void DuckApplication::createIndexBuffer() {
 
     void* data;
     vkMapMemory(vkSetup.device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, indices.data(), (size_t)bufferSize);
+    memcpy(data, duckModel.indices.data(), (size_t)bufferSize);
     vkUnmapMemory(vkSetup.device, stagingBufferMemory);
 
     // different usage bit flag VK_BUFFER_USAGE_INDEX_BUFFER_BIT instead of VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
@@ -850,7 +702,7 @@ void DuckApplication::mainLoop() {
 
 //////////////////////
 //
-// Frame drawing
+// Frame drawing and GUI 
 //
 //////////////////////
 
@@ -865,7 +717,7 @@ void DuckApplication::drawFrame() {
     // semaphores are for syncing ops within or across cmd queues. We want to sync queue op to draw cmds and presentation so pref semaphores here
 
     // at the start of the frame, make sure that the previous frame has finished which will signal the fence
-    vkWaitForFences(vkSetup.device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+    //vkWaitForFences(vkSetup.device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
     // retrieve an image from the swap chain
     // swap chain is an extension so use the vk*KHR function
@@ -896,7 +748,8 @@ void DuckApplication::drawFrame() {
     // update the unifrom buffer before submitting
     updateUniformBuffer(imageIndex);
 
-    // update the UI
+    // update the UI, may change at every frame so this is where it is recorded, unlike the geometry which executes the same commands 
+    // hence it is recorded once at the start 
     renderUI();
 
     // the two command buffers, for geometry and UI
@@ -922,11 +775,12 @@ void DuckApplication::drawFrame() {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    // reset the fence to block next frame just before using the fence
+    // reset the fence so that when submitting the commands to the graphics queue, the fence is set to block so no subsequent 
     vkResetFences(vkSetup.device, 1, &inFlightFences[currentFrame]);
 
     // submit the command buffer to the graphics queue, takes an array of submitinfo when work load is much larger
-    // last param is a fence, should be signaled when the cmd buffer finished executing so use to signal frame has finished
+    // last param is a fence, which is signaled when the cmd buffer finishes executing and is used to inform that the frame has finished
+    // being rendered (the commands were all executed). The next frame can start rendering!
     if (vkQueueSubmit(vkSetup.graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
         throw std::runtime_error("failed to submit draw command buffer!");
     }
@@ -959,7 +813,7 @@ void DuckApplication::drawFrame() {
         throw std::runtime_error("failed to present swap chain image!");
     }
 
-    // after the ImGui frame is drawn, increment current frame count (% loops around)
+    // after the frame is drawn and presented, increment current frame count (% loops around)
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
@@ -1054,13 +908,7 @@ void DuckApplication::cleanup() {
     vkDestroyDescriptorPool(vkSetup.device, imGuiDescriptorPool, nullptr);
     vkDestroyDescriptorPool(vkSetup.device, descriptorPool, nullptr);
 
-    // destroy the texture image view and sampler
-    vkDestroySampler(vkSetup.device, textureSampler, nullptr);
-    vkDestroyImageView(vkSetup.device, textureImageView, nullptr);
-
-    // destroy the texture
-    vkDestroyImage(vkSetup.device, textureImage, nullptr);
-    vkFreeMemory(vkSetup.device, textureImageMemory, nullptr);
+    duckTexture.cleanupTexture();
 
     // destroy the descriptor layout
     vkDestroyDescriptorSetLayout(vkSetup.device, descriptorSetLayout, nullptr);
