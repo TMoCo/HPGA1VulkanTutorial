@@ -46,10 +46,25 @@ void Model::loadModel(const std::string& path) {
                 1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
             };
 
+            // add to the centre of gravity
+            centreOfGravity += vertex.pos;
 
             vertices.push_back(vertex);
             indices.push_back(indices.size());
         }
     }
+
+    // now compute the centre by dividing by the number of vertices in the model
+    centreOfGravity /= (float)vertices.size();
+
+    modelSpan = 0;
+    // using the centre of gravity, determine the point that is furthest away
+    for (const auto& vertex : vertices) {
+        float distance = glm::distance(vertex.pos, centreOfGravity);
+        if (distance > modelSpan)
+            modelSpan = distance;
+    }
+    // just use the result doubled as the model span
+    modelSpan *= 2;
 }
 

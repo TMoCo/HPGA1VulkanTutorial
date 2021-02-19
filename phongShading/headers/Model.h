@@ -22,6 +22,13 @@ public:
     // object data
     //
 
+    // the largest distance between any two vertices
+    float modelSpan = 0;
+
+    // the centre of gravity of the model
+    glm::vec3 centreOfGravity;
+
+    // vertex and index data
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
 };

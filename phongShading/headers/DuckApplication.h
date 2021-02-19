@@ -35,17 +35,17 @@
 // Helper structs
 //
 
-// a struct containing uniforms
+// a struct containing uniforms needs to follow std140 packing rules (mirrored in shader.frag!!!)
 struct UniformBufferObject {
     // matrices for scene rendering
     glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
     // flag for setting the colour to texture coordinates
-    int uvToRgb; 
-    int hasAmbient;
-    int hasDiffuse;
-    int hasSpecular;
+    alignas(16) glm::vec3 ambient; int uvToRgb; // 16 byte alignment (vec3(12B) + int(4B) = 16B)
+    alignas(16) glm::vec3 diffuse; int useTexture;
+    glm::vec4 specular; // vec4 = 4 floats = 16 bytes
+    glm::vec3 lightPos = { 0, -3, 0 }; // /!\ not aligned, but okay because it is the last element in the buffer
 };
 
 
@@ -178,9 +178,13 @@ private:
 
     bool enableDepthTest = true;
     bool uvToRgb = false;
-    bool enableAlbedo = true;
-    bool enableDiffuse = true;
-    bool enableSpecular = true;
+    bool useTexture = true;
+    bool centreModel = false;
+
+    float ambient[3] = { 0.1f, 0.1f, 0.1f };
+    float diffuse[3] = { 0.5f, 0.5f, 0.5f };
+    float specular[3] = { 0.7f, 0.7f, 0.7f };
+    float specularExp = 38.0f;
 
 
     // layout used to specify fragment uniforms, still required even if not used

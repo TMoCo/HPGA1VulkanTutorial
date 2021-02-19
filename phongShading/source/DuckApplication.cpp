@@ -358,26 +358,26 @@ void DuckApplication::updateUniformBuffer(uint32_t currentImage) {
 
     UniformBufferObject ubo{};
 
+    // start by setting up the model by:
     // translate the model to start in view of the camera
-    ubo.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -30.0f, -85.0f));
+    ubo.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+    // scale it to unit(ish) length
+    ubo.model = glm::scale(ubo.model, glm::vec3(1.0f / duckModel.modelSpan));
     // add the user translation
     ubo.model = glm::translate(ubo.model, glm::vec3(translateX, translateY, translateZ));
     
+    // scale by zoom
     ubo.model = glm::scale(ubo.model, glm::vec3(zoom, zoom, zoom));
 
     // add the x, y, z rotations
     glm::quat rotation = glm::quat(glm::vec3(glm::radians(rotateX), glm::radians(rotateY), glm::radians(rotateZ)));
-
     ubo.model = ubo.model * glm::toMat4(rotation);
 
-    // rotate the model to be upright
-    //ubo.model = glm::rotate(ubo.model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-
-    // a simple rotation around the z axis
-    //ubo.model = glm::rotate(ubo.model, time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    if (centreModel)
+        ubo.model = glm::translate(ubo.model, -duckModel.centreOfGravity);
 
     // make the camera view the geometry from above at a 45° angle (eye pos, subject pos, up direction)
-    ubo.view = glm::mat4(1.0f); //glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::mat4(1.0f); 
     
     // proect the scene with a 45° fov, use current swap chain extent to compute aspect ratio, near, far
     ubo.proj = glm::perspective(glm::radians(45.0f), swapChainData.extent.width / (float)swapChainData.extent.height, 0.1f, 100.0f);
@@ -385,12 +385,14 @@ void DuckApplication::updateUniformBuffer(uint32_t currentImage) {
     // designed for openGL, so y coordinates are inverted
     ubo.proj[1][1] *= -1;
 
-    // set for mapping to texture
+    // set for mapping to texture coordinates or using texture at all
     ubo.uvToRgb = uvToRgb;
-    // set for enabling/disabling material
-    ubo.hasAmbient = enableAlbedo;
-    ubo.hasDiffuse = enableDiffuse;
-    ubo.hasSpecular = enableSpecular;
+    ubo.useTexture = useTexture;
+
+    // set for modifying material
+    ubo.ambient = glm::vec3(ambient[0], ambient[1], ambient[2]);
+    ubo.diffuse = glm::vec3(diffuse[0], diffuse[1], diffuse[2]);
+    ubo.specular = glm::vec4(specular[0], specular[1], specular[2], specularExp);
 
     // copy the uniform buffer object into the uniform buffer
     void* data;
@@ -824,8 +826,9 @@ void DuckApplication::renderUI() {
     ImGui::NewFrame();
 
     // for now just display the demo window
-    //ImGui::ShowDemoWindow();
+    ImGui::ShowDemoWindow();
 
+    
     ImGui::Begin("Transform the model"); // Create a window for transforming the model in world space
     ImGui::Text("Translation:");
     ImGui::SliderFloat("x ", &translateX, -100.0f, 100.0f);
@@ -836,15 +839,19 @@ void DuckApplication::renderUI() {
     ImGui::SliderFloat("y", &rotateY, 0.0f, 360.0f);
     ImGui::SliderFloat("z", &rotateZ, 0.0f, 360.0f);
     ImGui::Text("Zoom:");
-    ImGui::SliderFloat("", &zoom, 0.0f, 1.0f);
+    ImGui::SliderFloat("", &zoom, 0.0f, 2.0f);
+    ImGui::Checkbox("Centre model", &centreModel);
     ImGui::End();
 
     ImGui::Begin("Render stages and material properties");
     ImGui::Checkbox("Depth test", &enableDepthTest);
     ImGui::Checkbox("UV to RGB", &uvToRgb);
-    ImGui::Checkbox("Ambient/Albedo", &enableAlbedo);
-    ImGui::Checkbox("Diffues/Labertian", &enableDiffuse);
-    ImGui::Checkbox("Specular", &enableSpecular);
+    ImGui::Checkbox("Texture", &useTexture);
+    ImGui::Text("Material:");
+    ImGui::SliderFloat3("Ambient", ambient, 0.0f, 1.0f);
+    ImGui::SliderFloat3("Diffuse", diffuse, 0.0f, 1.0f);
+    ImGui::SliderFloat3("Specular", specular, 0.0f, 1.0f);
+    ImGui::SliderFloat("Specular exponent", &specularExp, 0.0f, 50.0f);
     ImGui::End();
 
     // tell ImGui to render
